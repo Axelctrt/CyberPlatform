@@ -1,0 +1,33 @@
+[
+  {
+    "timestamp": "2026-07-19T10:15:00Z",
+    "source_type": "network",
+    "source_ip": "192.168.1.10",
+    "destination_ip": "10.0.0.5",
+    "username": null,
+    "event_type": "network_flow",
+    "severity": 2,
+    "raw_message": "Sample network flow from UNSW-like source",
+    "features": {
+      "duration": 0.42,
+      "protocol": "tcp",
+      "bytes_sent": 840,
+      "bytes_received": 4200
+    }
+  },
+  {
+    "timestamp": "2026-07-19T10:17:00Z",
+    "source_type": "authentication",
+    "source_ip": "172.16.0.25",
+    "destination_ip": "10.0.0.8",
+    "username": "admin",
+    "event_type": "login_failed",
+    "severity": 4,
+    "raw_message": "Multiple failed login attempts",
+    "features": {
+      "failed_attempts": 5,
+      "is_privileged_account": true
+    }
+  }
+]
+
