@@ -1,0 +1,46 @@
+[
+  {
+    "timestamp": "2026-07-20T11:05:00Z",
+    "source_type": "system",
+    "source_ip": "10.0.0.15",
+    "destination_ip": null,
+    "username": "svc-backup",
+    "event_type": "process_start",
+    "severity": 2,
+    "raw_message": "Backup process started",
+    "features": {
+      "process_name": "backup.exe",
+      "parent_process": "scheduler.exe"
+    }
+  },
+  {
+    "timestamp": "2026-07-20T11:22:00Z",
+    "source_type": "cloud",
+    "source_ip": "185.22.12.4",
+    "destination_ip": "cloud-api",
+    "username": "admin",
+    "event_type": "api_call",
+    "severity": 3,
+    "raw_message": "Administrative API call from unusual location",
+    "features": {
+      "api_action": "ListAccessKeys",
+      "geo_risk": "medium"
+    }
+  },
+  {
+    "timestamp": "2026-07-20T11:31:00Z",
+    "source_type": "application",
+    "source_ip": "192.168.1.55",
+    "destination_ip": "10.0.0.20",
+    "username": "web-user",
+    "event_type": "http_error",
+    "severity": 2,
+    "raw_message": "Repeated HTTP 500 errors on login endpoint",
+    "features": {
+      "endpoint": "/login",
+      "status_code": 500,
+      "request_count": 14
+    }
+  }
+]
+

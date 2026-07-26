@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import StrEnum
+from enum import Enum
 from typing import Any
 
 
-class SourceType(StrEnum):
+class SourceType(str, Enum):
     NETWORK = "network"
     SYSTEM = "system"
     AUTHENTICATION = "authentication"
@@ -16,7 +16,7 @@ class SourceType(StrEnum):
     APPLICATION = "application"
 
 
-class Priority(StrEnum):
+class Priority(str, Enum):
     LOW = "Low"
     MEDIUM = "Medium"
     HIGH = "High"
@@ -77,4 +77,3 @@ def validate_security_event(event: SecurityEvent) -> None:
         raise ValueError("raw_message is required.")
     if not 1 <= event.severity <= 5:
         raise ValueError("severity must be between 1 and 5.")
-

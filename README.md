@@ -40,6 +40,16 @@ CyberPlatform/
 ## Lancement des tests
 
 ```powershell
+$env:PYTHONPATH='src'
 python -m unittest discover -s tests
 ```
+
+## Sprint 2 - Ingestion et normalisation
+
+Le projet contient maintenant deux connecteurs simples :
+
+- chargement de fichiers JSON ;
+- chargement de fichiers CSV.
+
+Les enregistrements bruts sont transformes en objets `SecurityEvent` afin de conserver un schema commun avant le futur pretraitement Machine Learning.
 

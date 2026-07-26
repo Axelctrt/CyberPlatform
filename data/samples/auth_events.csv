@@ -1,0 +1,4 @@
+timestamp,source_type,source_ip,destination_ip,username,event_type,severity,raw_message,failed_attempts,is_privileged_account
+2026-07-20T09:12:00Z,authentication,172.16.0.21,10.0.0.8,admin,login_failed,4,Repeated failed login attempts,6,true
+2026-07-20T09:18:00Z,authentication,172.16.0.44,10.0.0.8,jdupont,login_success,1,Successful login from known workstation,0,false
+

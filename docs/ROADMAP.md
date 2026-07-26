@@ -27,6 +27,13 @@ Livrables :
 - logs simules systeme, authentification, cloud et applicatif ;
 - validation des champs obligatoires.
 
+Etat actuel :
+
+- connecteurs CSV et JSON ajoutes ;
+- normalisation vers `SecurityEvent` ;
+- exemples multi-sources dans `data/samples/` ;
+- tests unitaires sur chargement, conversion et rejet des formats non supportes.
+
 ## Sprint 3 - Pretraitement et baseline ML
 
 Objectif : obtenir un premier modele mesurable sans chercher encore la performance maximale.
@@ -61,4 +68,3 @@ Livrables :
 - vues evenements, alertes, metriques ;
 - filtres par source et priorite ;
 - documentation d'installation et d'utilisation.
-
