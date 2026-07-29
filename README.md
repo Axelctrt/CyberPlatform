@@ -53,3 +53,14 @@ Le projet contient maintenant deux connecteurs simples :
 
 Les enregistrements bruts sont transformes en objets `SecurityEvent` afin de conserver un schema commun avant le futur pretraitement Machine Learning.
 
+## Sprint 3 - Pretraitement et baseline ML
+
+Le projet contient une premiere chaine Machine Learning volontairement simple :
+
+- conversion des evenements normalises en tableau de features ;
+- separation features / label ;
+- separation train/test reproductible ;
+- detection binaire normale / attaque avec une regression logistique ;
+- calcul des premieres metriques : accuracy, precision, recall et F1-score.
+
+Cette baseline sert de point de comparaison avant l'ajout d'un modele principal plus performant.

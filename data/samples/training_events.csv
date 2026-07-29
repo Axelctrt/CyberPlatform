@@ -1,0 +1,12 @@
+timestamp,source_type,source_ip,destination_ip,username,event_type,severity,raw_message,duration,protocol,bytes_sent,bytes_received,failed_attempts,is_privileged_account,label
+2026-07-21T08:01:00Z,network,192.168.1.10,10.0.0.5,,network_flow,1,Regular internal web traffic,0.31,tcp,620,2800,0,false,0
+2026-07-21T08:04:00Z,network,192.168.1.11,10.0.0.6,,network_flow,1,Regular DNS traffic,0.12,udp,120,860,0,false,0
+2026-07-21T08:07:00Z,authentication,172.16.0.31,10.0.0.8,jdupont,login_success,1,Successful login from known workstation,0.02,tcp,300,900,0,false,0
+2026-07-21T08:12:00Z,application,192.168.1.52,10.0.0.20,web-user,http_request,1,Standard application request,0.20,tcp,520,3100,0,false,0
+2026-07-21T08:16:00Z,system,10.0.0.15,,svc-backup,process_start,2,Scheduled backup process started,1.80,tcp,1400,2200,0,false,0
+2026-07-21T08:22:00Z,authentication,185.22.12.4,10.0.0.8,admin,login_failed,4,Multiple failed login attempts,0.04,tcp,350,700,8,true,1
+2026-07-21T08:24:00Z,network,203.0.113.8,10.0.0.5,,network_flow,5,High volume suspicious flow,3.90,tcp,89000,1200,0,false,1
+2026-07-21T08:29:00Z,cloud,198.51.100.7,cloud-api,admin,api_call,4,Administrative API call from unusual location,0.44,tcp,1700,2100,0,true,1
+2026-07-21T08:34:00Z,application,192.168.1.60,10.0.0.20,web-user,http_error,3,Repeated errors on login endpoint,0.25,tcp,760,800,0,false,1
+2026-07-21T08:40:00Z,network,203.0.113.40,10.0.0.10,,network_flow,4,Reconnaissance-like connection pattern,0.08,tcp,90,120,0,false,1
+

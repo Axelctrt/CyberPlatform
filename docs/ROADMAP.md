@@ -46,6 +46,15 @@ Livrables :
 - modele baseline ;
 - metriques principales.
 
+Etat actuel :
+
+- conversion des `SecurityEvent` en tableau exploitable par Scikit-learn ;
+- separation features / label ;
+- separation train/test reproductible ;
+- pipeline baseline avec imputation, encodage, normalisation numerique et regression logistique ;
+- metriques accuracy, precision, recall et F1-score ;
+- tests unitaires sur la preparation et l'entrainement baseline.
+
 ## Sprint 4 - Modele principal et priorisation
 
 Objectif : produire des alertes classees et priorisees.
