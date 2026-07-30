@@ -67,6 +67,15 @@ Livrables :
 - priorites Low, Medium, High, Critical ;
 - export des alertes enrichies.
 
+Etat actuel :
+
+- modele principal Random Forest ajoute ;
+- comparaison baseline / modele principal sur une meme separation train/test ;
+- sauvegarde et rechargement de pipeline avec Joblib ;
+- scoring combinant probabilite d'attaque, severite et criticite de la source ;
+- enrichissement des evenements avec prediction, score et priorite ;
+- export CSV des alertes detectees.
+
 ## Sprint 5 - Dashboard et finalisation
 
 Objectif : rendre la plateforme demonstrable.

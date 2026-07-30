@@ -64,3 +64,14 @@ Le projet contient une premiere chaine Machine Learning volontairement simple :
 - calcul des premieres metriques : accuracy, precision, recall et F1-score.
 
 Cette baseline sert de point de comparaison avant l'ajout d'un modele principal plus performant.
+
+## Sprint 4 - Modele principal et priorisation
+
+Le projet contient maintenant une premiere logique de detection exploitable :
+
+- entrainement d'un modele principal Random Forest ;
+- comparaison entre baseline et modele principal ;
+- sauvegarde et rechargement de modeles entraines ;
+- calcul d'un score de risque de 0 a 100 ;
+- attribution d'une priorite Low, Medium, High ou Critical ;
+- export CSV des alertes enrichies.
