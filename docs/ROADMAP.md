@@ -86,3 +86,12 @@ Livrables :
 - vues evenements, alertes, metriques ;
 - filtres par source et priorite ;
 - documentation d'installation et d'utilisation.
+
+Etat actuel :
+
+- dashboard Streamlit ajoute dans `app/streamlit_app.py` ;
+- preparation de donnees dediee au dashboard ;
+- synthese des volumes, alertes et modele recommande ;
+- filtres par priorite et source ;
+- vues Overview, Alerts, Metrics et Events ;
+- tests unitaires sur les donnees de dashboard.

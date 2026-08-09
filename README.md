@@ -75,3 +75,21 @@ Le projet contient maintenant une premiere logique de detection exploitable :
 - calcul d'un score de risque de 0 a 100 ;
 - attribution d'une priorite Low, Medium, High ou Critical ;
 - export CSV des alertes enrichies.
+
+## Sprint 5 - Dashboard et finalisation
+
+Le projet contient une premiere interface Streamlit :
+
+- vue de synthese des evenements et alertes ;
+- filtres par priorite et source ;
+- graphiques de repartition ;
+- tableau des alertes priorisees ;
+- comparaison des metriques baseline / modele principal ;
+- tableau des evenements normalises et enrichis.
+
+## Lancement du dashboard
+
+```powershell
+$env:PYTHONPATH='src'
+python -m streamlit run app/streamlit_app.py
+```
