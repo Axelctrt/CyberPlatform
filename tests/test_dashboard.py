@@ -15,6 +15,8 @@ class DashboardDataTest(unittest.TestCase):
         self.assertEqual(len(data.event_table), 10)
         self.assertIn("risk_score", data.event_table.columns)
         self.assertGreaterEqual(len(data.alert_table), 1)
+        self.assertGreaterEqual(len(data.mitre_table), 1)
+        self.assertGreaterEqual(len(data.feature_importance_table), 1)
         self.assertIn(data.recommended_model, {"baseline", "primary"})
 
     def test_metrics_are_formatted_as_comparison_table(self):
@@ -33,4 +35,3 @@ class DashboardDataTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

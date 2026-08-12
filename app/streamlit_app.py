@@ -26,6 +26,8 @@ def load_dashboard_data():
 data = load_dashboard_data()
 event_table = data.event_table
 alert_table = data.alert_table
+mitre_table = data.mitre_table
+importance_table = data.feature_importance_table
 metrics_table = metrics_to_table(data.baseline_metrics, data.primary_metrics)
 
 st.title("CyberPlatform")
@@ -57,8 +59,8 @@ filtered_alerts = alert_table[
     & alert_table["source_type"].isin(source_filter)
 ] if not alert_table.empty else alert_table
 
-overview_tab, alerts_tab, metrics_tab, events_tab = st.tabs(
-    ["Overview", "Alerts", "Metrics", "Events"]
+overview_tab, alerts_tab, metrics_tab, threat_tab, events_tab = st.tabs(
+    ["Overview", "Alerts", "Metrics", "Threat Context", "Events"]
 )
 
 with overview_tab:
@@ -122,6 +124,22 @@ with metrics_tab:
     )
     st.bar_chart(metrics_table.set_index("model")[["accuracy", "precision", "recall", "f1_score"]])
 
+    st.subheader("Random Forest feature importance")
+    st.dataframe(
+        importance_table,
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.bar_chart(importance_table.set_index("feature")["importance"])
+
+with threat_tab:
+    st.subheader("MITRE ATT&CK mapping")
+    st.dataframe(
+        mitre_table,
+        use_container_width=True,
+        hide_index=True,
+    )
+
 with events_tab:
     st.subheader("Normalized events")
     st.dataframe(
@@ -129,4 +147,3 @@ with events_tab:
         use_container_width=True,
         hide_index=True,
     )
-

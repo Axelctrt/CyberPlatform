@@ -7,6 +7,7 @@ from cyberplatform.ml.baseline import (
     train_baseline_classifier,
 )
 from cyberplatform.ml.comparison import ModelComparison, compare_baseline_and_primary
+from cyberplatform.ml.explainability import feature_importance_table
 from cyberplatform.ml.persistence import load_model, save_model
 from cyberplatform.ml.preprocessing import (
     create_train_test_split,
@@ -29,6 +30,7 @@ __all__ = [
     "create_train_test_split",
     "evaluate_classifier",
     "events_to_dataframe",
+    "feature_importance_table",
     "infer_feature_types",
     "load_model",
     "predict_attack_probabilities",

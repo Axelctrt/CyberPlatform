@@ -93,3 +93,12 @@ Le projet contient une premiere interface Streamlit :
 $env:PYTHONPATH='src'
 python -m streamlit run app/streamlit_app.py
 ```
+
+## Sprint 6 optionnel - Contexte cyber
+
+Le projet contient des extensions optionnelles utiles pour la demonstration :
+
+- ingestion d'un exemple Suricata EVE JSON Lines ;
+- mapping MITRE ATT&CK simplifie pour contextualiser les alertes ;
+- importance des variables du modele Random Forest ;
+- onglet dashboard dedie au contexte menace.

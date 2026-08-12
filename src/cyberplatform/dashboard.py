@@ -11,6 +11,7 @@ from cyberplatform.ml import (
     compare_baseline_and_primary,
     create_train_test_split,
     events_to_dataframe,
+    feature_importance_table,
     predict_attack_probabilities,
     split_features_target,
     train_primary_classifier,
@@ -18,6 +19,7 @@ from cyberplatform.ml import (
 from cyberplatform.ml.baseline import ClassificationMetrics
 from cyberplatform.scoring import alert_records, enrich_events_with_scores
 from cyberplatform.schema import Priority, SecurityEvent
+from cyberplatform.threat_intel import map_events_to_mitre_records
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +27,8 @@ class DashboardData:
     events: list[SecurityEvent]
     event_table: pd.DataFrame
     alert_table: pd.DataFrame
+    mitre_table: pd.DataFrame
+    feature_importance_table: pd.DataFrame
     baseline_metrics: ClassificationMetrics
     primary_metrics: ClassificationMetrics
     recommended_model: str
@@ -55,11 +59,15 @@ def build_demo_dashboard_data(
 
     event_table = events_to_display_table(enriched_events)
     alert_table = pd.DataFrame(alert_records(enriched_events))
+    mitre_table = pd.DataFrame(map_events_to_mitre_records(enriched_events))
+    importance_table = feature_importance_table(primary_model)
 
     return DashboardData(
         events=enriched_events,
         event_table=event_table,
         alert_table=alert_table,
+        mitre_table=mitre_table,
+        feature_importance_table=importance_table,
         baseline_metrics=comparison.baseline,
         primary_metrics=comparison.primary,
         recommended_model=comparison.recommended_model,
@@ -134,4 +142,3 @@ def source_counts(event_table: pd.DataFrame) -> pd.DataFrame:
         .rename_axis("source_type")
         .reset_index(name="count")
     )
-

@@ -95,3 +95,22 @@ Etat actuel :
 - filtres par priorite et source ;
 - vues Overview, Alerts, Metrics et Events ;
 - tests unitaires sur les donnees de dashboard.
+
+## Sprint 6 optionnel - Contexte cyber et explicabilite legere
+
+Objectif : ajouter des extensions de valeur sans transformer le prototype en SIEM industriel.
+
+Livrables :
+
+- ingestion d'un fichier Suricata EVE JSON Lines ;
+- mapping MITRE ATT&CK simplifie ;
+- importance des variables pour le modele principal ;
+- integration du contexte menace dans le dashboard.
+
+Etat actuel :
+
+- connecteur Suricata EVE JSON ajoute ;
+- exemple `suricata_eve_sample.jsonl` ajoute ;
+- mapping MITRE partiel par type d'evenement et categorie Suricata ;
+- extraction des importances du Random Forest ;
+- nouvel onglet Threat Context dans le dashboard.

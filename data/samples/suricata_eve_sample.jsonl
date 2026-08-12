@@ -1,0 +1,4 @@
+{"timestamp":"2026-07-22T14:10:01.123456+00:00","event_type":"alert","src_ip":"203.0.113.45","src_port":51342,"dest_ip":"10.0.0.20","dest_port":443,"proto":"TCP","alert":{"signature":"ET WEB_SERVER Possible SQL Injection Attempt","category":"Attempted Information Leak","severity":2},"flow":{"bytes_toserver":1840,"bytes_toclient":220}}
+{"timestamp":"2026-07-22T14:12:44.000000+00:00","event_type":"alert","src_ip":"198.51.100.17","src_port":44512,"dest_ip":"10.0.0.8","dest_port":22,"proto":"TCP","alert":{"signature":"ET SCAN Potential SSH Scan","category":"Attempted Information Leak","severity":3},"flow":{"bytes_toserver":540,"bytes_toclient":80}}
+{"timestamp":"2026-07-22T14:19:03.500000+00:00","event_type":"flow","src_ip":"192.168.1.20","src_port":50510,"dest_ip":"10.0.0.5","dest_port":53,"proto":"UDP","flow":{"bytes_toserver":120,"bytes_toclient":450}}
+
