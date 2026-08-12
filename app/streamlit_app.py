@@ -11,6 +11,9 @@ from cyberplatform.dashboard import (
 )
 
 
+DASHBOARD_CACHE_VERSION = "sprint-6-threat-context"
+
+
 st.set_page_config(
     page_title="CyberPlatform",
     page_icon="CP",
@@ -19,11 +22,11 @@ st.set_page_config(
 
 
 @st.cache_data
-def load_dashboard_data():
+def load_dashboard_data(cache_version: str):
     return build_demo_dashboard_data()
 
 
-data = load_dashboard_data()
+data = load_dashboard_data(DASHBOARD_CACHE_VERSION)
 event_table = data.event_table
 alert_table = data.alert_table
 mitre_table = data.mitre_table
