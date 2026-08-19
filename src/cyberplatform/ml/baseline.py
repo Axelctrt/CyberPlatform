@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -86,9 +87,22 @@ def evaluate_classifier(
     model: Pipeline,
     features: pd.DataFrame,
     target: pd.Series,
+    *,
+    threshold: float = 0.5,
 ) -> ClassificationMetrics:
     """Evaluate a binary classifier with metrics relevant to SOC alert quality."""
-    predictions = model.predict(features)
+    positive_scores: np.ndarray | None = None
+    if hasattr(model, "predict_proba"):
+        probabilities = model.predict_proba(features)
+        classes = list(model.named_steps["classifier"].classes_)
+        if 1 in classes:
+            positive_scores = np.asarray(probabilities[:, classes.index(1)], dtype=float)
+
+    if positive_scores is not None:
+        predictions = (positive_scores >= float(threshold)).astype(int)
+    else:
+        predictions = model.predict(features)
+
     matrix = confusion_matrix(target, predictions, labels=[0, 1])
     tn, fp, fn, tp = (int(value) for value in matrix.ravel())
     fpr = fp / (fp + tn) if (fp + tn) else 0.0
@@ -96,13 +110,9 @@ def evaluate_classifier(
 
     roc_auc: float | None = None
     pr_auc: float | None = None
-    if hasattr(model, "predict_proba") and len(set(target.tolist())) == 2:
-        probabilities = model.predict_proba(features)
-        classes = list(model.named_steps["classifier"].classes_)
-        if 1 in classes:
-            positive_scores = probabilities[:, classes.index(1)]
-            roc_auc = float(roc_auc_score(target, positive_scores))
-            pr_auc = float(average_precision_score(target, positive_scores))
+    if positive_scores is not None and len(set(target.tolist())) == 2:
+        roc_auc = float(roc_auc_score(target, positive_scores))
+        pr_auc = float(average_precision_score(target, positive_scores))
 
     return ClassificationMetrics(
         accuracy=float(accuracy_score(target, predictions)),
