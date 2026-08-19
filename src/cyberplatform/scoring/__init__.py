@@ -7,6 +7,7 @@ from cyberplatform.scoring.risk import (
     enrich_events_with_scores,
     export_alerts_csv,
     priority_distribution,
+    risk_score_components,
 )
 
 __all__ = [
@@ -16,5 +17,5 @@ __all__ = [
     "enrich_events_with_scores",
     "export_alerts_csv",
     "priority_distribution",
+    "risk_score_components",
 ]
-
