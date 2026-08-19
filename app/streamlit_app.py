@@ -17,7 +17,6 @@ from cyberplatform.dashboard import (
     analyze_unsw_dataframe,
     build_dashboard_data,
     confusion_matrix_table,
-    known_category_counts,
     load_demo_events,
     load_metrics_report,
     metrics_report_to_table,
@@ -60,38 +59,127 @@ overview_tab, alerts_tab, ml_tab, import_tab, threat_tab, explain_tab = st.tabs(
 )
 
 with overview_tab:
+    sources = source_counts(event_table)
+    if len(sources) == 1:
+        active_source = str(sources.iloc[0]["source_type"])
+        st.caption(
+            f"Source de l'analyse courante : **{active_source}**. "
+            "Pour UNSW-NB15, toutes les observations sont des flux réseau ; "
+            "un graphique de répartition des sources serait donc artificiel."
+        )
+    elif len(sources) > 1:
+        st.subheader("Répartition des sources")
+        st.plotly_chart(
+            px.pie(
+                sources,
+                values="count",
+                names="source_type",
+                hole=0.45,
+                labels={"source_type": "Source", "count": "Événements"},
+            ),
+            use_container_width=True,
+        )
+
+    predicted = pd.DataFrame()
+    if not event_table.empty and "prediction" in event_table.columns:
+        predicted = event_table[event_table["prediction"].notna()].copy()
+        if not predicted.empty:
+            predicted["prediction_label"] = predicted["prediction"].map(
+                {0: "Normal prédit", 1: "Attaque prédite"}
+            )
+
     left, right = st.columns(2)
     with left:
-        st.subheader("Sources des événements")
-        sources = source_counts(event_table)
-        if not sources.empty:
-            st.plotly_chart(px.pie(sources, values="count", names="source_type", hole=0.4), use_container_width=True)
+        st.subheader("Résultat de la détection")
+        if predicted.empty:
+            st.caption("Aucune prédiction ML dans les données actuellement affichées.")
         else:
-            st.caption("Aucun événement chargé.")
+            prediction_counts = (
+                predicted["prediction_label"]
+                .value_counts()
+                .rename_axis("prediction_label")
+                .reset_index(name="count")
+            )
+            st.plotly_chart(
+                px.pie(
+                    prediction_counts,
+                    values="count",
+                    names="prediction_label",
+                    hole=0.5,
+                    labels={"prediction_label": "Résultat", "count": "Événements"},
+                ),
+                use_container_width=True,
+            )
+
     with right:
         st.subheader("Priorités des alertes détectées")
         priorities = priority_counts(alert_table)
         if priorities["count"].sum() > 0:
-            st.plotly_chart(px.bar(priorities, x="priority", y="count"), use_container_width=True)
+            priority_chart = px.bar(
+                priorities,
+                x="priority",
+                y="count",
+                color="priority",
+                labels={"priority": "Priorité", "count": "Alertes"},
+                category_orders={"priority": ["Low", "Medium", "High", "Critical"]},
+            )
+            priority_chart.update_layout(showlegend=False)
+            st.plotly_chart(priority_chart, use_container_width=True)
         else:
             st.caption("Aucune alerte ML priorisée.")
 
-    categories = known_category_counts(event_table)
-    if not categories.empty:
-        st.subheader("Catégories connues UNSW-NB15")
-        st.plotly_chart(
-            px.bar(
-                categories,
-                x="known_attack_category",
-                y="count",
-                labels={"known_attack_category": "Catégorie", "count": "Événements"},
-            ),
-            use_container_width=True,
-        )
-        st.caption(
-            "Ces catégories proviennent du champ attack_cat du dataset importé. "
-            "Elles servent de vérité terrain/contexte et ne sont pas prédites par le classifieur binaire."
-        )
+    if not predicted.empty and "known_attack_category" in predicted.columns:
+        category_predictions = predicted.dropna(subset=["known_attack_category"]).copy()
+        if not category_predictions.empty:
+            st.subheader("Prédictions par catégorie réelle UNSW-NB15")
+
+            actual_attack = (
+                category_predictions["known_attack_category"]
+                .astype(str)
+                .str.casefold()
+                .ne("normal")
+            )
+            predicted_attack = category_predictions["prediction"].astype(int).eq(1)
+            true_positives = int((actual_attack & predicted_attack).sum())
+            false_negatives = int((actual_attack & ~predicted_attack).sum())
+            false_positives = int((~actual_attack & predicted_attack).sum())
+            actual_attacks = int(actual_attack.sum())
+            sample_recall = (true_positives / actual_attacks * 100) if actual_attacks else 0.0
+
+            quality = st.columns(4)
+            quality[0].metric("Attaques réelles", actual_attacks)
+            quality[1].metric("Attaques détectées", true_positives)
+            quality[2].metric("Faux négatifs", false_negatives)
+            quality[3].metric("Faux positifs", false_positives)
+
+            grouped = (
+                category_predictions.groupby(
+                    ["known_attack_category", "prediction_label"],
+                    dropna=False,
+                )
+                .size()
+                .reset_index(name="count")
+            )
+            st.plotly_chart(
+                px.bar(
+                    grouped,
+                    x="known_attack_category",
+                    y="count",
+                    color="prediction_label",
+                    barmode="group",
+                    labels={
+                        "known_attack_category": "Catégorie réelle",
+                        "prediction_label": "Prédiction",
+                        "count": "Événements",
+                    },
+                ),
+                use_container_width=True,
+            )
+            st.caption(
+                f"Recall observé sur cet échantillon : **{sample_recall:.1f} %**. "
+                "Les catégories proviennent de attack_cat et représentent la vérité terrain ; "
+                "le modèle reste un classifieur binaire Normal / Attack."
+            )
 
     st.subheader("Événements")
     st.dataframe(
@@ -200,6 +288,16 @@ with import_tab:
             st.rerun()
         except Exception as error:
             st.error(str(error))
+
+    st.divider()
+    st.caption(
+        "La démonstration multi-sources permet de visualiser séparément des événements "
+        "système, cloud, application et authentification, sans les faire passer dans le modèle UNSW-NB15."
+    )
+    if st.button("Recharger la démonstration multi-sources"):
+        st.session_state.dashboard_data = build_dashboard_data(load_demo_events())
+        st.session_state.analysis_origin = "Données multi-sources de démonstration — aucune validation ML"
+        st.rerun()
 
 with threat_tab:
     st.subheader("MITRE ATT&CK — mapping simplifié et indicatif")
