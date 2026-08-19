@@ -1,36 +1,89 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 from cyberplatform.dashboard import (
-    build_demo_dashboard_data,
-    metrics_to_table,
+    analyze_unsw_dataframe,
+    build_dashboard_data,
+    category_detection_performance,
+    confusion_matrix_table,
+    known_category_counts,
+    load_demo_events,
+    metrics_report_to_table,
+    normalize_generic_upload,
     priority_counts,
     source_counts,
+    validate_unsw_dataframe,
 )
+from cyberplatform.datasets import load_unsw_nb15_file, prepare_unsw_nb15_split
+from cyberplatform.ml import save_model, train_primary_classifier
 
 
 class DashboardDataTest(unittest.TestCase):
-    def test_demo_dashboard_data_contains_events_alerts_and_metrics(self):
-        data = build_demo_dashboard_data()
+    def test_demo_sources_are_visible_but_not_fake_ml_alerts(self):
+        data = build_dashboard_data(load_demo_events())
+        self.assertGreaterEqual(len(data.event_table), 1)
+        self.assertEqual(len(data.alert_table), 0)
+        self.assertGreaterEqual(source_counts(data.event_table)["count"].sum(), 1)
+        self.assertEqual(priority_counts(data.alert_table)["count"].sum(), 0)
+        self.assertEqual(known_category_counts(data.event_table)["count"].sum(), 0)
 
-        self.assertEqual(len(data.event_table), 10)
-        self.assertIn("risk_score", data.event_table.columns)
-        self.assertGreaterEqual(len(data.alert_table), 1)
-        self.assertGreaterEqual(len(data.mitre_table), 1)
-        self.assertGreaterEqual(len(data.feature_importance_table), 1)
-        self.assertIn(data.recommended_model, {"baseline", "primary"})
+    def test_generic_upload_is_normalized_without_prediction(self):
+        payload = Path("data/samples/auth_events.csv").read_bytes()
+        data = normalize_generic_upload(payload, "auth_events.csv")
+        self.assertEqual(len(data.event_table), 2)
+        self.assertTrue(data.event_table["prediction"].isna().all())
 
-    def test_metrics_are_formatted_as_comparison_table(self):
-        data = build_demo_dashboard_data()
-        table = metrics_to_table(data.baseline_metrics, data.primary_metrics)
+    def test_metrics_and_confusion_matrix_are_dashboard_ready(self):
+        report = {
+            "baseline_metrics": {"accuracy": .8, "precision": .7, "recall": .9, "f1_score": .79, "fpr": .2, "fnr": .1, "roc_auc": .9, "pr_auc": .88},
+            "primary_metrics": {"accuracy": .9, "precision": .9, "recall": .9, "f1_score": .9, "fpr": .1, "fnr": .1, "roc_auc": .95, "pr_auc": .94},
+        }
+        self.assertEqual(len(metrics_report_to_table(report)), 2)
+        matrix = confusion_matrix_table({"confusion_matrix": [[8, 2], [1, 9]]})
+        self.assertEqual(matrix.loc["Actual Attack", "Pred Attack"], 9)
 
-        self.assertEqual(list(table["model"]), ["Logistic regression", "Random Forest"])
-        self.assertIn("f1_score", table.columns)
+    def test_saved_binary_model_exposes_dataset_category_without_faking_multiclass_prediction(self):
+        frame = load_unsw_nb15_file("data/samples/unsw_nb15_sample.csv")
+        split = prepare_unsw_nb15_split(frame, test_size=0.3)
+        model = train_primary_classifier(split.train_features, split.train_target)
+        with TemporaryDirectory() as tmpdir:
+            path = save_model(model, Path(tmpdir) / "primary_model.joblib")
+            validation = validate_unsw_dataframe(path, frame)
+            data = analyze_unsw_dataframe(path, frame)
 
-    def test_chart_tables_are_generated_from_event_table(self):
-        data = build_demo_dashboard_data()
+        self.assertTrue(validation["compatible"])
+        self.assertEqual(validation["required_columns"], validation["recognized_columns"])
+        self.assertTrue(validation["has_label"])
+        self.assertTrue(validation["has_attack_cat"])
+        self.assertEqual(len(data.event_table), len(frame))
+        self.assertIn("prediction", data.event_table.columns)
+        self.assertIn("known_attack_category", data.event_table.columns)
+        self.assertEqual(known_category_counts(data.event_table)["count"].sum(), len(frame))
+        self.assertSetEqual(
+            set(data.event_table["known_attack_category"].dropna()),
+            set(frame["attack_cat"].dropna()),
+        )
+        performance = category_detection_performance(data.event_table)
+        self.assertFalse(performance.empty)
+        self.assertIn("attack_detection_rate", performance.columns)
+        self.assertIn("false_positive_rate", performance.columns)
+        if not data.alert_table.empty:
+            self.assertIn("known_attack_category", data.alert_table.columns)
+            self.assertTrue(data.alert_table["attack_type"].isna().all())
 
-        self.assertEqual(priority_counts(data.event_table)["count"].sum(), len(data.event_table))
-        self.assertEqual(source_counts(data.event_table)["count"].sum(), len(data.event_table))
+    def test_unsw_validation_reports_missing_model_columns(self):
+        frame = load_unsw_nb15_file("data/samples/unsw_nb15_sample.csv")
+        split = prepare_unsw_nb15_split(frame, test_size=0.3)
+        model = train_primary_classifier(split.train_features, split.train_target)
+        with TemporaryDirectory() as tmpdir:
+            path = save_model(model, Path(tmpdir) / "primary_model.joblib")
+            missing_column = split.feature_columns[0]
+            invalid = frame.drop(columns=[missing_column])
+            validation = validate_unsw_dataframe(path, invalid)
+
+        self.assertFalse(validation["compatible"])
+        self.assertIn(missing_column, validation["missing_columns"])
 
 
 if __name__ == "__main__":

@@ -1,116 +1,58 @@
-# Roadmap Agile
+# Roadmap Agile incrémentale pilotée par Kanban
 
-## Sprint 1 - Socle projet et architecture
+## Règles de pilotage
 
-Objectif : mettre en place une base de projet claire et compatible avec le cahier des charges.
+- Backlog unique lié aux exigences F1 à F7.
+- Colonnes de suivi : À faire / En cours / À tester / Terminé.
+- Une tâche technique principale à la fois.
+- Définition de terminé : code fonctionnel, tests associés, résultat vérifié, documentation mise à jour.
+- Commits courts et fonctionnels ; pas de fusion vers une branche stable sans validation.
 
-Livrables :
+## Incréments historiques
 
-- structure du depot ;
-- documentation initiale ;
-- schema commun d'evenement de securite ;
-- exemple minimal d'evenements ;
-- premiers tests unitaires.
+### Sprint 1 — Socle
+- structure du dépôt ; schéma `SecurityEvent` ; premiers tests.
 
-Critere de fin :
+### Sprint 2 — Ingestion / normalisation
+- CSV ; JSON ; sources multi-sources simulées ; normalisation commune.
 
-- le projet est lisible, versionnable et pret pour l'implementation des connecteurs.
+### Sprint 3 — Prétraitement / baseline
+- conversion en features ; split reproductible ; Logistic Regression ; premières métriques.
 
-## Sprint 2 - Ingestion et normalisation
+### Sprint 4 — Modèle principal / scoring
+- Random Forest ; comparaison ; Joblib ; score de risque ; export CSV.
 
-Objectif : charger des sources simples et les transformer vers le schema commun.
+### Sprint 5 — Dashboard
+- vues événements / alertes / métriques ; filtres ; graphiques Streamlit.
 
-Livrables :
+### Sprint 6 — Contexte cyber optionnel
+- Suricata EVE JSON Lines ; MITRE ATT&CK simplifié ; importance des variables.
 
-- ingestion CSV ;
-- ingestion JSON ;
-- logs simules systeme, authentification, cloud et applicatif ;
-- validation des champs obligatoires.
+## Phase de consolidation finale
 
-Etat actuel :
+Branche : `final-ml-platform-consolidation`
 
-- connecteurs CSV et JSON ajoutes ;
-- normalisation vers `SecurityEvent` ;
-- exemples multi-sources dans `data/samples/` ;
-- tests unitaires sur chargement, conversion et rejet des formats non supportes.
+### Lot C1 — Dataset scientifique UNSW-NB15 — Terminé
+- adaptateur dédié ; nettoyage défensif ; séparation labels/features ; exclusion de `id`, `label`, `attack_cat` ; split officiel ou repli stratifié reproductible ; option Windows de limitation de lignes.
 
-## Sprint 3 - Pretraitement et baseline ML
+### Lot C2 — Entraînement / inférence / métriques — Terminé
+- CLI d'entraînement séparée de Streamlit ; Logistic Regression + Random Forest ; TN/FP/FN/TP/FPR/FNR ; ROC-AUC / PR-AUC ; matrice de confusion ; Joblib ; rapport JSON ; validation des features d'inférence.
 
-Objectif : obtenir un premier modele mesurable sans chercher encore la performance maximale.
+### Lot C3 — Scoring / dashboard / contexte menace — Terminé
+- aucun score/priorité sur un événement normal ; seuils 0-30 / 31-60 / 61-80 / 81-100 ; High/Critical parmi les alertes uniquement ; import CSV/JSON/UNSW/Suricata ; export CSV ; modèle sauvegardé ; MITRE sans `T0000` ; distinction ML réseau / multi-source ; aucune fausse classification multi-classe à partir de `attack_cat`.
 
-Livrables :
+### Lot C4 — Tests / CI — Terminé
+- fixture UNSW-NB15 légère ; tests schéma, ingestion, dataset, ML, métriques, scoring, dashboard, MITRE et entraînement ; GitHub Actions sans dataset complet.
 
-- nettoyage des donnees ;
-- encodage ;
-- split train/test ;
-- modele baseline ;
-- metriques principales.
+### Lot C5 — Documentation / validation finale — Terminé
+- README Windows ; installation, dataset, entraînement, tests, dashboard ; limites scientifiques ; architecture ; stockage léger ; roadmap mise à jour ; draft PR de validation sans fusion.
 
-Etat actuel :
+## Extensions laissées au backlog
 
-- conversion des `SecurityEvent` en tableau exploitable par Scikit-learn ;
-- separation features / label ;
-- separation train/test reproductible ;
-- pipeline baseline avec imputation, encodage, normalisation numerique et regression logistique ;
-- metriques accuracy, precision, recall et F1-score ;
-- tests unitaires sur la preparation et l'entrainement baseline.
+- classification multi-classe UNSW-NB15 après validation binaire sur le dataset complet ;
+- SHAP local si l'installation reste légère ;
+- SQLite si la persistance de plusieurs analyses devient nécessaire ;
+- CICIDS-2018 comme validation externe éventuelle ;
+- Docker après stabilisation locale Windows.
 
-## Sprint 4 - Modele principal et priorisation
-
-Objectif : produire des alertes classees et priorisees.
-
-Livrables :
-
-- comparaison baseline / modele principal ;
-- sauvegarde du modele ;
-- score de risque 0-100 ;
-- priorites Low, Medium, High, Critical ;
-- export des alertes enrichies.
-
-Etat actuel :
-
-- modele principal Random Forest ajoute ;
-- comparaison baseline / modele principal sur une meme separation train/test ;
-- sauvegarde et rechargement de pipeline avec Joblib ;
-- scoring combinant probabilite d'attaque, severite et criticite de la source ;
-- enrichissement des evenements avec prediction, score et priorite ;
-- export CSV des alertes detectees.
-
-## Sprint 5 - Dashboard et finalisation
-
-Objectif : rendre la plateforme demonstrable.
-
-Livrables :
-
-- dashboard Streamlit ;
-- vues evenements, alertes, metriques ;
-- filtres par source et priorite ;
-- documentation d'installation et d'utilisation.
-
-Etat actuel :
-
-- dashboard Streamlit ajoute dans `app/streamlit_app.py` ;
-- preparation de donnees dediee au dashboard ;
-- synthese des volumes, alertes et modele recommande ;
-- filtres par priorite et source ;
-- vues Overview, Alerts, Metrics et Events ;
-- tests unitaires sur les donnees de dashboard.
-
-## Sprint 6 optionnel - Contexte cyber et explicabilite legere
-
-Objectif : ajouter des extensions de valeur sans transformer le prototype en SIEM industriel.
-
-Livrables :
-
-- ingestion d'un fichier Suricata EVE JSON Lines ;
-- mapping MITRE ATT&CK simplifie ;
-- importance des variables pour le modele principal ;
-- integration du contexte menace dans le dashboard.
-
-Etat actuel :
-
-- connecteur Suricata EVE JSON ajoute ;
-- exemple `suricata_eve_sample.jsonl` ajoute ;
-- mapping MITRE partiel par type d'evenement et categorie Suricata ;
-- extraction des importances du Random Forest ;
-- nouvel onglet Threat Context dans le dashboard.
+Restent hors périmètre : SIEM industriel complet, Wazuh/Elastic complet, orchestration SOC, réponse automatique, Kubernetes, microservices et Deep Learning complexe.

@@ -7,7 +7,9 @@ from cyberplatform.ml.baseline import (
     train_baseline_classifier,
 )
 from cyberplatform.ml.comparison import ModelComparison, compare_baseline_and_primary
+from cyberplatform.ml.evaluation import binary_curve_points, metrics_at_threshold, optimize_decision_threshold
 from cyberplatform.ml.explainability import feature_importance_table
+from cyberplatform.ml.inference import expected_model_columns, predict_unsw_dataframe, prepare_inference_features
 from cyberplatform.ml.persistence import load_model, save_model
 from cyberplatform.ml.preprocessing import (
     create_train_test_split,
@@ -24,16 +26,22 @@ from cyberplatform.ml.primary import (
 __all__ = [
     "ClassificationMetrics",
     "ModelComparison",
+    "binary_curve_points",
     "build_baseline_pipeline",
     "build_primary_pipeline",
     "compare_baseline_and_primary",
     "create_train_test_split",
     "evaluate_classifier",
     "events_to_dataframe",
+    "expected_model_columns",
     "feature_importance_table",
     "infer_feature_types",
     "load_model",
+    "metrics_at_threshold",
+    "optimize_decision_threshold",
     "predict_attack_probabilities",
+    "predict_unsw_dataframe",
+    "prepare_inference_features",
     "save_model",
     "split_features_target",
     "train_baseline_classifier",

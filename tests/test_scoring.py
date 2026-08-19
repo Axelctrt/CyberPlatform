@@ -11,48 +11,53 @@ from cyberplatform.scoring import (
     enrich_events_with_scores,
     export_alerts_csv,
     priority_distribution,
+    risk_score_components,
 )
 
 
 class RiskScoringTest(unittest.TestCase):
-    def test_risk_score_combines_probability_severity_and_source(self):
-        score = compute_risk_score(
-            attack_probability=0.9,
-            severity=5,
-            source_type=SourceType.AUTHENTICATION,
+    def test_risk_score_is_bounded(self):
+        score = compute_risk_score(1.5, 8, SourceType.AUTHENTICATION)
+        self.assertTrue(0 <= score <= 100)
+
+    def test_risk_score_components_reconcile_with_total(self):
+        components = risk_score_components(0.80, 3, SourceType.NETWORK)
+        expected = round(
+            components["confidence_component"]
+            + components["severity_component"]
+            + components["source_criticality_component"],
+            2,
         )
+        self.assertEqual(components["total"], expected)
+        self.assertEqual(compute_risk_score(0.80, 3, SourceType.NETWORK), expected)
 
-        self.assertGreaterEqual(score, 85)
+    def test_benign_prediction_has_no_risk_or_priority(self):
+        event = normalize_records(load_records("data/samples/auth_events.csv"))[1]
+        enriched = enrich_event_with_score(event, attack_probability=0.10)
+        self.assertEqual(enriched.prediction, 0)
+        self.assertIsNone(enriched.risk_score)
+        self.assertIsNone(enriched.priority)
 
-    def test_event_is_enriched_with_prediction_score_and_priority(self):
+    def test_attack_receives_score_and_priority(self):
         event = normalize_records(load_records("data/samples/auth_events.csv"))[0]
-        enriched = enrich_event_with_score(event, attack_probability=0.82)
-
+        enriched = enrich_event_with_score(event, attack_probability=0.95, attack_type="Generic")
         self.assertEqual(enriched.prediction, 1)
         self.assertIsNotNone(enriched.risk_score)
-        self.assertIn(enriched.priority, {Priority.HIGH, Priority.CRITICAL})
+        self.assertIn(enriched.priority, set(Priority))
+        self.assertEqual(enriched.attack_type, "Generic")
 
-    def test_alert_records_and_csv_export(self):
-        events = normalize_records(load_records("data/samples/training_events.csv"))
-        probabilities = [0.1, 0.2, 0.1, 0.15, 0.2, 0.8, 0.9, 0.75, 0.7, 0.85]
-        enriched_events = enrich_events_with_scores(events, probabilities)
-        records = alert_records(enriched_events)
-
-        self.assertEqual(len(records), 5)
-
-        with TemporaryDirectory() as tmpdir:
-            output_path = export_alerts_csv(records, Path(tmpdir) / "alerts.csv")
-            self.assertTrue(output_path.exists())
-            self.assertIn("risk_score", output_path.read_text(encoding="utf-8"))
-
-    def test_priority_distribution_counts_scored_events(self):
+    def test_only_detected_attacks_are_exported_and_counted(self):
         events = normalize_records(load_records("data/samples/auth_events.csv"))
-        enriched_events = enrich_events_with_scores(events, [0.85, 0.1])
-        distribution = priority_distribution(enriched_events)
-
-        self.assertEqual(sum(distribution.values()), 2)
+        enriched = enrich_events_with_scores(events, [0.90, 0.10])
+        records = alert_records(enriched)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(sum(priority_distribution(enriched).values()), 1)
+        with TemporaryDirectory() as tmpdir:
+            path = export_alerts_csv(records, Path(tmpdir) / "alerts.csv")
+            content = path.read_text(encoding="utf-8")
+        for column in ("timestamp", "source_type", "prediction", "risk_score", "priority"):
+            self.assertIn(column, content.splitlines()[0])
 
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -18,22 +18,34 @@ SOURCE_CRITICALITY = {
 }
 
 
+def risk_score_components(
+    attack_probability: float,
+    severity: int,
+    source_type: SourceType,
+) -> dict[str, float]:
+    """Return the transparent weighted components used by the prototype score."""
+    bounded_probability = min(max(float(attack_probability), 0.0), 1.0)
+    bounded_severity = min(max(int(severity), 1), 5)
+    source_criticality = SOURCE_CRITICALITY.get(source_type, 0.50)
+    confidence_component = bounded_probability * 60
+    severity_component = ((bounded_severity - 1) / 4) * 25
+    source_component = source_criticality * 15
+    total = min(max(confidence_component + severity_component + source_component, 0.0), 100.0)
+    return {
+        "confidence_component": round(confidence_component, 2),
+        "severity_component": round(severity_component, 2),
+        "source_criticality_component": round(source_component, 2),
+        "total": round(total, 2),
+    }
+
+
 def compute_risk_score(
     attack_probability: float,
     severity: int,
     source_type: SourceType,
 ) -> float:
-    """Compute a simple 0-100 risk score for a predicted alert."""
-    bounded_probability = min(max(attack_probability, 0.0), 1.0)
-    bounded_severity = min(max(severity, 1), 5)
-    source_criticality = SOURCE_CRITICALITY.get(source_type, 0.50)
-
-    score = (
-        bounded_probability * 60
-        + ((bounded_severity - 1) / 4) * 25
-        + source_criticality * 15
-    )
-    return round(min(score, 100.0), 2)
+    """Compute a documented prototype score from confidence, severity and source context."""
+    return risk_score_components(attack_probability, severity, source_type)["total"]
 
 
 def enrich_event_with_score(
@@ -42,11 +54,18 @@ def enrich_event_with_score(
     threshold: float = 0.5,
     attack_type: str | None = None,
 ) -> SecurityEvent:
-    """Attach prediction, score and priority to an event."""
-    event.prediction = int(attack_probability >= threshold)
-    event.attack_type = attack_type if event.prediction else None
+    """Attach ML confidence and only prioritize events actually detected as attacks."""
+    event.confidence = min(max(float(attack_probability), 0.0), 1.0)
+    event.prediction = int(event.confidence >= threshold)
+    if event.prediction == 0:
+        event.attack_type = None
+        event.risk_score = None
+        event.priority = None
+        return event
+
+    event.attack_type = attack_type
     event.risk_score = compute_risk_score(
-        attack_probability=attack_probability,
+        attack_probability=event.confidence,
         severity=event.severity,
         source_type=event.source_type,
     )
@@ -58,24 +77,28 @@ def enrich_events_with_scores(
     events: Iterable[SecurityEvent],
     attack_probabilities: Iterable[float],
     threshold: float = 0.5,
+    attack_types: Iterable[str | None] | None = None,
 ) -> list[SecurityEvent]:
-    """Score a batch of events using model attack probabilities."""
+    events_list = list(events)
+    probabilities_list = list(attack_probabilities)
+    if len(events_list) != len(probabilities_list):
+        raise ValueError("events and attack_probabilities must have the same length")
+    types = list(attack_types) if attack_types is not None else [None] * len(events_list)
+    if len(types) != len(events_list):
+        raise ValueError("attack_types must have the same length as events")
     return [
-        enrich_event_with_score(event, probability, threshold=threshold)
-        for event, probability in zip(events, attack_probabilities, strict=True)
+        enrich_event_with_score(event, probability, threshold=threshold, attack_type=attack_type)
+        for event, probability, attack_type in zip(events_list, probabilities_list, types, strict=True)
     ]
 
 
 def alert_records(events: Iterable[SecurityEvent]) -> list[dict[str, object]]:
-    """Return serialized records for events predicted as attacks."""
     return [event.to_record() for event in events if event.prediction == 1]
 
 
 def export_alerts_csv(records: list[dict[str, object]], path: str | Path) -> Path:
-    """Export alert records to CSV for analyst review."""
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
     fieldnames = [
         "timestamp",
         "source_type",
@@ -83,27 +106,23 @@ def export_alerts_csv(records: list[dict[str, object]], path: str | Path) -> Pat
         "destination_ip",
         "username",
         "event_type",
-        "severity",
-        "raw_message",
         "prediction",
         "attack_type",
+        "confidence",
         "risk_score",
         "priority",
     ]
-
     with output_path.open("w", newline="", encoding="utf-8") as file:
         writer = csv.DictWriter(file, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(records)
-
     return output_path
 
 
 def priority_distribution(events: Iterable[SecurityEvent]) -> dict[Priority, int]:
-    """Count scored events by priority level."""
+    """Count priorities among detected alerts only."""
     distribution = {priority: 0 for priority in Priority}
     for event in events:
-        if event.priority is not None:
+        if event.prediction == 1 and event.priority is not None:
             distribution[event.priority] += 1
     return distribution
-

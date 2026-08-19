@@ -1,55 +1,35 @@
 import unittest
 
-from cyberplatform.ingestion import load_eve_json_records, normalize_eve_records
-from cyberplatform.ml import (
-    events_to_dataframe,
-    feature_importance_table,
-    split_features_target,
-    train_primary_classifier,
-)
-from cyberplatform.ingestion import load_records, normalize_records
-from cyberplatform.threat_intel import map_event_to_mitre, map_events_to_mitre_records
+from cyberplatform.ingestion import load_eve_json_records, load_records, normalize_eve_records, normalize_records
+from cyberplatform.schema import SourceType
+from cyberplatform.threat_intel import map_event_to_mitre
 
 
 class OptionalExtensionsTest(unittest.TestCase):
-    def test_suricata_eve_records_are_loaded_and_normalized(self):
-        records = load_eve_json_records("data/samples/suricata_eve_sample.jsonl")
-        events = normalize_eve_records(records)
-
-        self.assertEqual(len(events), 3)
-        self.assertEqual(events[0].event_type, "suricata_alert")
-        self.assertEqual(events[0].features["destination_port"], 443)
-
-    def test_mitre_mapping_adds_threat_context(self):
-        records = load_eve_json_records("data/samples/suricata_eve_sample.jsonl")
-        event = normalize_eve_records(records)[0]
+    def test_benign_or_unscored_generic_event_is_not_mapped(self):
+        event = normalize_records(load_records("data/samples/auth_events.csv"))[1]
         technique = map_event_to_mitre(event)
+        self.assertIsNone(technique.technique_id)
+        self.assertEqual(technique.technique_name, "Non mappé")
 
-        self.assertNotEqual(technique.technique_id, "T0000")
-        self.assertTrue(technique.tactic)
+    def test_detected_suspicious_event_can_be_mapped(self):
+        event = normalize_records(load_records("data/samples/auth_events.csv"))[0]
+        event.prediction = 1
+        technique = map_event_to_mitre(event)
+        self.assertEqual(technique.technique_id, "T1110")
 
-    def test_mitre_records_are_dashboard_ready(self):
-        records = load_records("data/samples/training_events.csv")
-        events = normalize_records(records)
-        mitre_records = map_events_to_mitre_records(events)
+    def test_unknown_suspicious_event_has_clean_fallback(self):
+        event = normalize_records(load_records("data/samples/mixed_events.json"))[0]
+        event.prediction = 1
+        technique = map_event_to_mitre(event)
+        self.assertIsNone(technique.technique_id)
 
-        self.assertEqual(len(mitre_records), len(events))
-        self.assertIn("technique_id", mitre_records[0])
-
-    def test_primary_model_feature_importances_are_available(self):
-        records = load_records("data/samples/training_events.csv")
-        events = normalize_records(records)
-        dataframe = events_to_dataframe(events)
-        features, target = split_features_target(dataframe)
-        model = train_primary_classifier(features, target)
-
-        importances = feature_importance_table(model, top_n=5)
-
-        self.assertLessEqual(len(importances), 5)
-        self.assertIn("feature", importances.columns)
-        self.assertIn("importance", importances.columns)
+    def test_suricata_alert_can_use_native_ids_context(self):
+        events = normalize_eve_records(load_eve_json_records("data/samples/suricata_eve_sample.jsonl"))
+        alert = next(event for event in events if event.event_type == "suricata_alert")
+        technique = map_event_to_mitre(alert)
+        self.assertIsNotNone(technique.technique_id)
 
 
 if __name__ == "__main__":
     unittest.main()
-

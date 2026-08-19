@@ -1,68 +1,24 @@
-from pathlib import Path
-from tempfile import TemporaryDirectory
 import unittest
 
-from cyberplatform.ingestion import load_records, normalize_records
-from cyberplatform.ml import (
-    compare_baseline_and_primary,
-    create_train_test_split,
-    events_to_dataframe,
-    load_model,
-    predict_attack_probabilities,
-    save_model,
-    split_features_target,
-    train_primary_classifier,
-)
-from cyberplatform.scoring import alert_records, enrich_events_with_scores
+from cyberplatform.datasets import load_unsw_nb15_file, prepare_unsw_nb15_split
+from cyberplatform.ml import compare_baseline_and_primary, predict_attack_probabilities
 
 
 class ModelPrioritizationTest(unittest.TestCase):
-    def _training_data(self):
-        records = load_records("data/samples/training_events.csv")
-        events = normalize_records(records)
-        dataframe = events_to_dataframe(events)
-        features, target = split_features_target(dataframe)
-        return events, features, target
-
-    def test_primary_model_can_predict_attack_probabilities(self):
-        _, features, target = self._training_data()
-        model = train_primary_classifier(features, target)
-        probabilities = predict_attack_probabilities(model, features)
-
-        self.assertEqual(len(probabilities), len(features))
-        self.assertTrue(all(0 <= probability <= 1 for probability in probabilities))
-
-    def test_baseline_and_primary_can_be_compared(self):
-        _, features, target = self._training_data()
-        train_features, test_features, train_target, test_target = create_train_test_split(
-            features,
-            target,
-        )
-
+    def test_comparison_can_return_fitted_models_for_training_pipeline(self):
+        split = prepare_unsw_nb15_split(load_unsw_nb15_file("data/samples/unsw_nb15_sample.csv"), test_size=0.3)
         comparison = compare_baseline_and_primary(
-            train_features,
-            test_features,
-            train_target,
-            test_target,
+            split.train_features,
+            split.test_features,
+            split.train_target,
+            split.test_target,
+            return_models=True,
         )
-
-        self.assertIn(comparison.recommended_model, {"baseline", "primary"})
-
-    def test_model_can_be_saved_loaded_and_used_for_alerts(self):
-        events, features, target = self._training_data()
-        model = train_primary_classifier(features, target)
-
-        with TemporaryDirectory() as tmpdir:
-            model_path = save_model(model, Path(tmpdir) / "primary_model.joblib")
-            loaded_model = load_model(model_path)
-
-        probabilities = predict_attack_probabilities(loaded_model, features)
-        enriched_events = enrich_events_with_scores(events, probabilities)
-        records = alert_records(enriched_events)
-
-        self.assertGreaterEqual(len(records), 1)
+        self.assertIsNotNone(comparison.baseline_model)
+        self.assertIsNotNone(comparison.primary_model)
+        probabilities = predict_attack_probabilities(comparison.primary_model, split.test_features)
+        self.assertEqual(len(probabilities), len(split.test_features))
 
 
 if __name__ == "__main__":
     unittest.main()
-
