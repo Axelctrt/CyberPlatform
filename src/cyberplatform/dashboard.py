@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 
 from cyberplatform.ingestion import normalize_eve_records, normalize_records
-from cyberplatform.ml import ClassificationMetrics, load_model, predict_unsw_dataframe
+from cyberplatform.ml import load_model, predict_unsw_dataframe
 from cyberplatform.scoring import alert_records, enrich_events_with_scores
 from cyberplatform.schema import Priority, SecurityEvent, SourceType
 from cyberplatform.threat_intel import map_events_to_mitre_records
@@ -27,6 +27,7 @@ class DashboardData:
 
 
 def events_to_display_table(events: list[SecurityEvent]) -> pd.DataFrame:
+    """Serialize normalized events without hiding that some fields can be non-applicable."""
     table = pd.DataFrame([event.to_record() for event in events])
     if table.empty:
         return table
@@ -78,7 +79,10 @@ def load_metrics_report(path: str | Path = "reports/model_metrics.json") -> dict
 
 def metrics_report_to_table(report: dict[str, Any]) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for label, key in (("Logistic Regression", "baseline_metrics"), ("Random Forest", "primary_metrics")):
+    for label, key in (
+        ("Logistic Regression", "baseline_metrics"),
+        ("Random Forest", "primary_metrics"),
+    ):
         metrics = report.get(key, {})
         rows.append(
             {
@@ -98,10 +102,15 @@ def metrics_report_to_table(report: dict[str, Any]) -> pd.DataFrame:
 
 def confusion_matrix_table(metrics: dict[str, Any]) -> pd.DataFrame:
     matrix = metrics.get("confusion_matrix") or [[0, 0], [0, 0]]
-    return pd.DataFrame(matrix, index=["Actual Normal", "Actual Attack"], columns=["Pred Normal", "Pred Attack"])
+    return pd.DataFrame(
+        matrix,
+        index=["Actual Normal", "Actual Attack"],
+        columns=["Pred Normal", "Pred Attack"],
+    )
 
 
 def priority_counts(alert_table: pd.DataFrame) -> pd.DataFrame:
+    """Count priorities among actual detected alerts only."""
     if alert_table.empty or "priority" not in alert_table.columns:
         return pd.DataFrame({"priority": [], "count": []})
     ordered = [priority.value for priority in Priority]
@@ -112,7 +121,12 @@ def priority_counts(alert_table: pd.DataFrame) -> pd.DataFrame:
 def source_counts(event_table: pd.DataFrame) -> pd.DataFrame:
     if event_table.empty or "source_type" not in event_table.columns:
         return pd.DataFrame({"source_type": [], "count": []})
-    return event_table["source_type"].value_counts().rename_axis("source_type").reset_index(name="count")
+    return (
+        event_table["source_type"]
+        .value_counts()
+        .rename_axis("source_type")
+        .reset_index(name="count")
+    )
 
 
 def parse_uploaded_records(payload: bytes, filename: str) -> list[dict[str, Any]]:
@@ -145,37 +159,42 @@ def parse_suricata_bytes(payload: bytes) -> list[dict[str, Any]]:
 
 
 def analyze_unsw_dataframe(model_path: str | Path, dataframe: pd.DataFrame) -> DashboardData:
-    """Analyze UNSW-compatible rows with a saved model; never retrain from Streamlit."""
+    """Analyze UNSW-compatible rows with a saved binary model; never infer attack families."""
     model = load_model(model_path)
-    analyzed = predict_unsw_dataframe(model, dataframe)
+    normalized_input = dataframe.copy()
+    normalized_input.columns = [str(column).strip().lower() for column in normalized_input.columns]
+    analyzed = predict_unsw_dataframe(model, normalized_input)
     events: list[SecurityEvent] = []
-    attack_types: list[str | None] = []
 
     for _, row in analyzed.iterrows():
-        known_attack_type = row.get("attack_cat")
-        attack_type = (
-            str(known_attack_type).strip()
-            if pd.notna(known_attack_type) and str(known_attack_type).strip()
+        known_category = row.get("attack_cat")
+        known_category = (
+            str(known_category).strip()
+            if pd.notna(known_category) and str(known_category).strip()
             else None
         )
-        severity = _severity_from_attack_type(attack_type)
-        event = SecurityEvent(
-            timestamp=datetime.now(timezone.utc),
-            source_type=SourceType.NETWORK,
-            event_type="network_flow",
-            raw_message="UNSW-NB15 compatible network flow",
-            severity=severity,
-            features={
-                key: value
-                for key, value in row.to_dict().items()
-                if key not in {"prediction", "attack_probability", "label", "attack_cat"}
-            },
+        features = {
+            key: value
+            for key, value in row.to_dict().items()
+            if key not in {"prediction", "attack_probability", "label", "attack_cat"}
+        }
+        if known_category is not None:
+            # This is ground-truth/context supplied by the input, not a multi-class prediction.
+            features["known_attack_category"] = known_category
+
+        events.append(
+            SecurityEvent(
+                timestamp=datetime.now(timezone.utc),
+                source_type=SourceType.NETWORK,
+                event_type="network_flow",
+                raw_message="UNSW-NB15 compatible network flow",
+                severity=3,
+                features=features,
+            )
         )
-        events.append(event)
-        attack_types.append(attack_type)
 
     probabilities = analyzed["attack_probability"].tolist()
-    enriched = enrich_events_with_scores(events, probabilities, attack_types=attack_types)
+    enriched = enrich_events_with_scores(events, probabilities)
     return build_dashboard_data(enriched)
 
 
@@ -185,21 +204,3 @@ def normalize_generic_upload(payload: bytes, filename: str) -> DashboardData:
 
 def normalize_suricata_upload(payload: bytes) -> DashboardData:
     return build_dashboard_data(normalize_eve_records(parse_suricata_bytes(payload)))
-
-
-def _severity_from_attack_type(attack_type: str | None) -> int:
-    if not attack_type:
-        return 3
-    values = {
-        "normal": 1,
-        "reconnaissance": 2,
-        "analysis": 2,
-        "fuzzers": 3,
-        "exploits": 4,
-        "generic": 4,
-        "dos": 4,
-        "backdoors": 4,
-        "shellcode": 5,
-        "worms": 5,
-    }
-    return values.get(attack_type.strip().lower(), 3)

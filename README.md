@@ -23,6 +23,8 @@ Deux usages sont clairement séparés :
 1. **Validation scientifique ML réseau** : UNSW-NB15 -> Logistic Regression + Random Forest -> métriques -> modèle sauvegardé.
 2. **Démonstration plateforme multi-source** : réseau, système, authentification, cloud et applicatif -> ingestion/normalisation/visualisation. Les sources non compatibles UNSW-NB15 ne sont pas artificiellement envoyées dans le modèle réseau.
 
+La chaîne ML déployée reste **binaire**. Si un fichier UNSW-NB15 contient `attack_cat`, cette colonne est considérée comme une vérité terrain / information de contexte éventuelle et **jamais comme une classe prédite par le modèle binaire**.
+
 ## Fonctionnalités
 
 - ingestion CSV et JSON ;
@@ -133,17 +135,14 @@ L'entraînement est volontairement séparé du dashboard.
 python -m cyberplatform.training --data-dir data/raw/unsw_nb15
 ```
 
-Cette commande :
+Cette commande charge et nettoie UNSW-NB15, exclut `id`, `label` et `attack_cat` des features, conserve le split officiel train/test lorsqu'il est disponible, entraîne Logistic Regression et Random Forest, calcule les métriques cyber puis sauvegarde :
 
-- charge et nettoie UNSW-NB15 ;
-- exclut `id`, `label` et `attack_cat` des features ;
-- conserve le split officiel train/test lorsqu'il est disponible ;
-- entraîne Logistic Regression et Random Forest ;
-- calcule les métriques cyber ;
-- sauvegarde `models/logistic_regression.joblib` ;
-- sauvegarde `models/random_forest.joblib` ;
-- sauvegarde le modèle sélectionné sous `models/primary_model.joblib` ;
-- écrit `reports/model_metrics.json`.
+```text
+models/logistic_regression.joblib
+models/random_forest.joblib
+models/primary_model.joblib
+reports/model_metrics.json
+```
 
 Pour un essai limité en mémoire sous Windows :
 
@@ -164,8 +163,6 @@ Les tests utilisent des fixtures légères. Ils ne téléchargent pas le dataset
 
 ## Lancer le dashboard
 
-Après installation :
-
 ```powershell
 python -m streamlit run app/streamlit_app.py
 ```
@@ -176,21 +173,15 @@ Le dashboard ne réentraîne aucun modèle. S'il ne trouve pas `models/primary_m
 
 Trois modes sont proposés :
 
-- **UNSW-NB15 compatible (CSV)** : vérification des features attendues, chargement du modèle Joblib, prédiction et scoring ;
+- **UNSW-NB15 compatible (CSV)** : vérification des features attendues, chargement du modèle Joblib, prédiction binaire et scoring ;
 - **CSV / JSON générique** : ingestion et normalisation pour la démonstration multi-source, sans fausse prédiction réseau ;
 - **Suricata EVE JSON Lines** : ingestion et contextualisation IDS, sans prétendre que le modèle UNSW-NB15 sait traiter directement ces événements.
 
 ## Scoring et priorisation
 
-Le score combine, à titre de règle métier de prototype :
-
-- confiance du modèle : 60 % ;
-- sévérité : 25 % ;
-- criticité simple du type de source : 15 %.
+Le score combine, à titre de règle métier de prototype : confiance du modèle 60 %, sévérité 25 % et criticité simple du type de source 15 %.
 
 Un événement prédit normal (`prediction == 0`) conserve sa confiance ML mais ne reçoit **ni `risk_score`, ni `priority`**. Le scoring opérationnel s'applique uniquement aux alertes détectées.
-
-Seuils :
 
 | Score | Priorité |
 |---:|---|
@@ -203,26 +194,13 @@ Ces coefficients et seuils sont des hypothèses explicites du prototype, pas une
 
 ## MITRE ATT&CK
 
-Le mapping est **simplifié et indicatif**. Il n'est appliqué qu'aux événements détectés comme suspects ou aux alertes natives Suricata. L'ordre de contextualisation est :
-
-1. catégorie d'attaque connue ;
-2. catégorie Suricata ;
-3. type d'événement ;
-4. aucune correspondance.
+Le mapping est **simplifié et indicatif**. Il n'est appliqué qu'aux événements détectés comme suspects ou aux alertes natives Suricata. L'ordre de contextualisation est : type/catégorie d'attaque explicitement fournie, catégorie connue du dataset lorsqu'elle existe comme contexte, catégorie Suricata, type d'événement, puis aucune correspondance.
 
 Un événement non mappé reçoit `technique_id = None` et `technique_name = "Non mappé"`. Aucun pseudo-identifiant comme `T0000` n'est utilisé.
 
 ## Stockage retenu
 
-Le prototype reste volontairement léger :
-
-- données brutes : fichiers hors Git ;
-- fixtures : CSV / JSON versionnés ;
-- modèles : Joblib ;
-- métriques : JSON ;
-- alertes : DataFrame + export CSV.
-
-SQLite n'est pas imposé dans cette version : il n'apporterait pas de valeur suffisante tant que la persistance multi-exécutions n'est pas un besoin de démonstration. Il reste une extension possible.
+Le prototype reste volontairement léger : données brutes en fichiers hors Git, fixtures CSV/JSON versionnées, modèles Joblib, métriques JSON et alertes en DataFrame avec export CSV. SQLite n'est pas imposé : il reste une extension si la persistance multi-exécutions devient utile à la démonstration.
 
 ## Limites assumées
 
@@ -230,10 +208,12 @@ SQLite n'est pas imposé dans cette version : il n'apporterait pas de valeur suf
 - validation ML principalement sur un dataset réseau public ;
 - généralisation à un réseau réel non démontrée par UNSW-NB15 seul ;
 - sources système/authentification/cloud/applicatives utilisées surtout pour démontrer ingestion, normalisation et restitution ;
+- classification multi-classe non implémentée dans la consolidation binaire ;
+- `attack_cat` d'UNSW-NB15 est une vérité terrain/contexte, pas une sortie du classifieur binaire ;
 - pas de réponse automatique, blocage réseau ou orchestration SOC ;
 - pas de Wazuh/Elastic complet ;
 - pas de Deep Learning obligatoire ;
-- classification multi-classe et SHAP restent des extensions après stabilisation du binaire.
+- SHAP reste une extension après stabilisation du binaire.
 
 ## Méthode projet
 

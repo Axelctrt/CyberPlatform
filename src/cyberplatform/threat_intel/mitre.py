@@ -75,6 +75,18 @@ def map_event_to_mitre(event: SecurityEvent) -> MitreTechnique:
         if mapped is not None:
             return mapped
 
+    known_category = event.features.get("known_attack_category") if event.features else None
+    if isinstance(known_category, str):
+        mapped = ATTACK_TYPE_MAPPING.get(known_category.strip().lower())
+        if mapped is not None:
+            return MitreTechnique(
+                mapped.tactic,
+                mapped.technique_id,
+                mapped.technique_name,
+                mapped.confidence,
+                "known_attack_category",
+            )
+
     category = event.features.get("suricata_category") if event.features else None
     if isinstance(category, str):
         mapped = SURICATA_CATEGORY_MAPPING.get(category.strip().lower())

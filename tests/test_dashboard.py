@@ -1,9 +1,6 @@
-from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-
-import pandas as pd
 
 from cyberplatform.dashboard import (
     analyze_unsw_dataframe,
@@ -42,15 +39,17 @@ class DashboardDataTest(unittest.TestCase):
         matrix = confusion_matrix_table({"confusion_matrix": [[8, 2], [1, 9]]})
         self.assertEqual(matrix.loc["Actual Attack", "Pred Attack"], 9)
 
-    def test_saved_model_can_analyze_compatible_unsw_rows(self):
+    def test_saved_binary_model_does_not_fake_multiclass_attack_type(self):
         frame = load_unsw_nb15_file("data/samples/unsw_nb15_sample.csv")
         split = prepare_unsw_nb15_split(frame, test_size=0.3)
         model = train_primary_classifier(split.train_features, split.train_target)
         with TemporaryDirectory() as tmpdir:
             path = save_model(model, Path(tmpdir) / "primary_model.joblib")
-            data = analyze_unsw_dataframe(path, frame.head(4))
-        self.assertEqual(len(data.event_table), 4)
+            data = analyze_unsw_dataframe(path, frame)
+        self.assertEqual(len(data.event_table), len(frame))
         self.assertIn("prediction", data.event_table.columns)
+        if not data.alert_table.empty:
+            self.assertTrue(data.alert_table["attack_type"].isna().all())
 
 
 if __name__ == "__main__":
