@@ -12,7 +12,7 @@ from typing import Any
 import pandas as pd
 
 from cyberplatform.ingestion import normalize_eve_records, normalize_records
-from cyberplatform.ml import load_model, predict_unsw_dataframe
+from cyberplatform.ml import expected_model_columns, load_model, predict_unsw_dataframe
 from cyberplatform.scoring import enrich_events_with_scores
 from cyberplatform.schema import Priority, SecurityEvent, SourceType
 from cyberplatform.threat_intel import map_events_to_mitre_records
@@ -166,6 +166,56 @@ def known_category_counts(event_table: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def category_detection_performance(event_table: pd.DataFrame) -> pd.DataFrame:
+    """Describe binary decisions by known UNSW attack category for error analysis."""
+    required = {"known_attack_category", "prediction"}
+    if event_table.empty or not required.issubset(event_table.columns):
+        return pd.DataFrame()
+    frame = event_table.dropna(subset=["known_attack_category", "prediction"]).copy()
+    if frame.empty:
+        return pd.DataFrame()
+    frame["prediction"] = frame["prediction"].astype(int)
+    rows: list[dict[str, Any]] = []
+    for category, group in frame.groupby("known_attack_category", sort=True):
+        detected = int(group["prediction"].eq(1).sum())
+        not_detected = int(group["prediction"].eq(0).sum())
+        total = int(len(group))
+        is_normal = str(category).strip().casefold() == "normal"
+        rows.append(
+            {
+                "category": str(category),
+                "events": total,
+                "attack_detected": detected,
+                "no_attack_detected": not_detected,
+                "attack_detection_rate": None if is_normal else detected / total,
+                "false_positive_rate": detected / total if is_normal else None,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def validate_unsw_dataframe(model_path: str | Path, dataframe: pd.DataFrame) -> dict[str, Any]:
+    """Preview schema compatibility before a user launches UNSW inference."""
+    model = load_model(model_path)
+    frame = dataframe.copy()
+    frame.columns = [str(column).strip().lower() for column in frame.columns]
+    required = expected_model_columns(model)
+    available = set(frame.columns)
+    recognized = [column for column in required if column in available]
+    missing = [column for column in required if column not in available]
+    extra = [column for column in frame.columns if column not in required]
+    return {
+        "compatible": not missing and len(frame) > 0,
+        "rows": int(len(frame)),
+        "required_columns": int(len(required)),
+        "recognized_columns": int(len(recognized)),
+        "missing_columns": missing,
+        "extra_columns": extra,
+        "has_label": "label" in available,
+        "has_attack_cat": "attack_cat" in available,
+    }
+
+
 def parse_uploaded_records(payload: bytes, filename: str) -> list[dict[str, Any]]:
     suffix = Path(filename).suffix.lower()
     if suffix == ".csv":
@@ -195,12 +245,17 @@ def parse_suricata_bytes(payload: bytes) -> list[dict[str, Any]]:
     return records
 
 
-def analyze_unsw_dataframe(model_path: str | Path, dataframe: pd.DataFrame) -> DashboardData:
+def analyze_unsw_dataframe(
+    model_path: str | Path,
+    dataframe: pd.DataFrame,
+    *,
+    threshold: float = 0.5,
+) -> DashboardData:
     """Analyze UNSW-compatible rows with a saved binary model; never infer attack families."""
     model = load_model(model_path)
     normalized_input = dataframe.copy()
     normalized_input.columns = [str(column).strip().lower() for column in normalized_input.columns]
-    analyzed = predict_unsw_dataframe(model, normalized_input)
+    analyzed = predict_unsw_dataframe(model, normalized_input, threshold=threshold)
     events: list[SecurityEvent] = []
 
     for _, row in analyzed.iterrows():
@@ -216,7 +271,6 @@ def analyze_unsw_dataframe(model_path: str | Path, dataframe: pd.DataFrame) -> D
             if key not in {"prediction", "attack_probability", "label", "attack_cat"}
         }
         if known_category is not None:
-            # This is ground-truth/context supplied by the input, not a multi-class prediction.
             features["known_attack_category"] = known_category
 
         events.append(
@@ -231,7 +285,7 @@ def analyze_unsw_dataframe(model_path: str | Path, dataframe: pd.DataFrame) -> D
         )
 
     probabilities = analyzed["attack_probability"].tolist()
-    enriched = enrich_events_with_scores(events, probabilities)
+    enriched = enrich_events_with_scores(events, probabilities, threshold=threshold)
     return build_dashboard_data(enriched)
 
 
