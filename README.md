@@ -4,6 +4,8 @@ CyberPlatform est un **prototype académique local et modulaire** de plateforme 
 
 Le périmètre est volontairement limité : le projet **n'est pas un SIEM industriel**, ne remplace pas Wazuh ou Elastic Security, ne réalise pas de réponse automatique et ne prétend pas appliquer un modèle réseau à tous les types de logs.
 
+La branche `main` constitue la **version stable finale du PFE**. Les évolutions éventuelles doivent être réalisées sur une branche dédiée puis intégrées par pull request après validation.
+
 ## Chaîne fonctionnelle
 
 ```text
@@ -84,7 +86,7 @@ Python 3.10 ou 3.11 est recommandé.
 git clone https://github.com/Axelctrt/CyberPlatform.git
 cd CyberPlatform
 git fetch origin
-git switch final-ml-platform-consolidation
+git switch main
 
 py -3.11 -m venv .venv
 Set-ExecutionPolicy -Scope Process Bypass
@@ -97,8 +99,8 @@ Si le dépôt est déjà présent :
 
 ```powershell
 git fetch origin
-git switch final-ml-platform-consolidation
-git pull --ff-only origin final-ml-platform-consolidation
+git switch main
+git pull --ff-only origin main
 ```
 
 ## Dataset principal : UNSW-NB15
@@ -229,7 +231,7 @@ Un événement non mappé reçoit `technique_id = None` et `technique_name = "No
 
 ## Stockage retenu
 
-Le prototype reste volontairement léger : données brutes en fichiers hors Git, fixtures CSV/JSON versionnées, modèles Joblib, métriques JSON et alertes en DataFrame avec export CSV. SQLite n'est pas imposé : il reste une extension si la persistance multi-exécutions devient utile à la démonstration.
+Le prototype reste volontairement léger : données brutes en fichiers hors Git, fixtures CSV/JSON versionnées, modèles Joblib, métriques JSON et alertes en DataFrame avec export CSV. SQLite n'est pas imposé : il reste une perspective éventuelle si la persistance multi-exécutions devenait nécessaire.
 
 ## Limites assumées
 
@@ -237,14 +239,19 @@ Le prototype reste volontairement léger : données brutes en fichiers hors Git,
 - validation ML principalement sur un dataset réseau public ;
 - généralisation à un réseau réel non démontrée par UNSW-NB15 seul ;
 - sources système/authentification/cloud/applicatives utilisées surtout pour démontrer ingestion, normalisation et restitution ;
-- classification multi-classe non implémentée dans la consolidation binaire ;
+- classification multi-classe non implémentée dans la version finale binaire ;
 - `attack_cat` d'UNSW-NB15 est une vérité terrain/contexte, pas une sortie du classifieur binaire ;
 - le FPR du modèle principal reste significatif et constitue une limite opérationnelle ;
 - le seuil expérimental optimisé sur validation ne généralise pas suffisamment pour remplacer automatiquement le seuil 0.50 ;
 - pas de réponse automatique, blocage réseau ou orchestration SOC ;
 - pas de Wazuh/Elastic complet ;
-- pas de Deep Learning obligatoire ;
-- SHAP reste une extension après stabilisation du binaire.
+- pas de Deep Learning obligatoire.
+
+## Perspectives hors version finale
+
+Les pistes suivantes sont volontairement laissées hors de la version finale du PFE afin de préserver le périmètre et la lisibilité du prototype : classification multi-classe UNSW-NB15, SHAP local, persistance SQLite, validation externe sur CICIDS-2018 et conteneurisation Docker.
+
+Elles ne sont pas nécessaires pour considérer la version `main` comme complète au regard du périmètre retenu.
 
 ## Documentation scientifique
 
@@ -252,4 +259,4 @@ Le protocole de sélection de seuil, l'interprétation des courbes, l'analyse d'
 
 ## Méthode projet
 
-Le développement suit une **approche Agile incrémentale pilotée par Kanban**. Chaque incrément doit être fonctionnel, testé, documenté et traçable par commit. La roadmap détaillée est disponible dans `docs/ROADMAP.md`.
+Le développement suit une **approche Agile incrémentale pilotée par Kanban**. Chaque incrément doit être fonctionnel, testé, documenté et traçable par commit. La roadmap détaillée et l'historique de consolidation sont disponibles dans `docs/ROADMAP.md`.
