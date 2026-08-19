@@ -13,7 +13,7 @@ import pandas as pd
 
 from cyberplatform.ingestion import normalize_eve_records, normalize_records
 from cyberplatform.ml import load_model, predict_unsw_dataframe
-from cyberplatform.scoring import alert_records, enrich_events_with_scores
+from cyberplatform.scoring import enrich_events_with_scores
 from cyberplatform.schema import Priority, SecurityEvent, SourceType
 from cyberplatform.threat_intel import map_events_to_mitre_records
 
@@ -26,9 +26,24 @@ class DashboardData:
     mitre_table: pd.DataFrame
 
 
+def _known_attack_category(event: SecurityEvent) -> str | None:
+    """Return dataset-provided attack context without presenting it as a model prediction."""
+    value = event.features.get("known_attack_category")
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _event_record_with_context(event: SecurityEvent) -> dict[str, Any]:
+    record = event.to_record()
+    record["known_attack_category"] = _known_attack_category(event)
+    return record
+
+
 def events_to_display_table(events: list[SecurityEvent]) -> pd.DataFrame:
-    """Serialize normalized events without hiding that some fields can be non-applicable."""
-    table = pd.DataFrame([event.to_record() for event in events])
+    """Serialize normalized events and expose dataset truth/context when available."""
+    table = pd.DataFrame([_event_record_with_context(event) for event in events])
     if table.empty:
         return table
     visible_columns = [
@@ -40,6 +55,7 @@ def events_to_display_table(events: list[SecurityEvent]) -> pd.DataFrame:
         "confidence",
         "risk_score",
         "priority",
+        "known_attack_category",
         "attack_type",
         "source_ip",
         "destination_ip",
@@ -49,11 +65,18 @@ def events_to_display_table(events: list[SecurityEvent]) -> pd.DataFrame:
     return table[[column for column in visible_columns if column in table.columns]]
 
 
+def events_to_alert_table(events: list[SecurityEvent]) -> pd.DataFrame:
+    """Serialize detected alerts while preserving input-provided UNSW category context."""
+    return pd.DataFrame(
+        [_event_record_with_context(event) for event in events if event.prediction == 1]
+    )
+
+
 def build_dashboard_data(events: list[SecurityEvent]) -> DashboardData:
     return DashboardData(
         events=events,
         event_table=events_to_display_table(events),
-        alert_table=pd.DataFrame(alert_records(events)),
+        alert_table=events_to_alert_table(events),
         mitre_table=pd.DataFrame(map_events_to_mitre_records(events)),
     )
 
@@ -125,6 +148,20 @@ def source_counts(event_table: pd.DataFrame) -> pd.DataFrame:
         event_table["source_type"]
         .value_counts()
         .rename_axis("source_type")
+        .reset_index(name="count")
+    )
+
+
+def known_category_counts(event_table: pd.DataFrame) -> pd.DataFrame:
+    """Count UNSW categories supplied by the input dataset, never model-inferred families."""
+    if event_table.empty or "known_attack_category" not in event_table.columns:
+        return pd.DataFrame({"known_attack_category": [], "count": []})
+    values = event_table["known_attack_category"].dropna()
+    if values.empty:
+        return pd.DataFrame({"known_attack_category": [], "count": []})
+    return (
+        values.value_counts()
+        .rename_axis("known_attack_category")
         .reset_index(name="count")
     )
 
