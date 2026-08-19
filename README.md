@@ -33,9 +33,9 @@ La chaîne ML déployée reste **binaire**. Si un fichier UNSW-NB15 contient `at
 - prise en charge du dataset UNSW-NB15 ;
 - prétraitement Scikit-learn intégré aux pipelines pour limiter les fuites de données ;
 - baseline Logistic Regression ;
-- modèle principal candidat Random Forest ;
+- modèle principal Random Forest ;
 - comparaison reproductible sur le même jeu de test ;
-- sélection du seuil Random Forest sur une validation issue uniquement du jeu d'entraînement ;
+- étude de sensibilité du seuil Random Forest sur une validation issue uniquement du jeu d'entraînement ;
 - accuracy, precision, recall, F1, TN, FP, FN, TP, FPR, FNR, ROC-AUC et PR-AUC ;
 - matrice de confusion ;
 - courbes ROC et Precision-Recall ;
@@ -125,13 +125,6 @@ data/raw/unsw_nb15/UNSW_NB15_testing-set.csv
 
 Le loader accepte également les variantes de nom avec `_training_set.csv` et `_testing_set.csv`. `data/raw/` est ignoré par Git afin de ne pas versionner le dataset volumineux.
 
-Exemple de copie depuis le dossier Téléchargements Windows :
-
-```powershell
-Copy-Item "$env:USERPROFILE\Downloads\UNSW_NB15_training-set.csv" "data\raw\unsw_nb15\"
-Copy-Item "$env:USERPROFILE\Downloads\UNSW_NB15_testing-set.csv" "data\raw\unsw_nb15\"
-```
-
 ## Entraîner les modèles
 
 L'entraînement est volontairement séparé du dashboard.
@@ -142,13 +135,9 @@ python -m cyberplatform.training --data-dir data/raw/unsw_nb15
 
 Cette commande charge et nettoie UNSW-NB15, exclut `id`, `label` et `attack_cat` des features et conserve le split officiel train/test lorsqu'il est disponible.
 
-Pour la Random Forest, un holdout stratifié de 20 % est extrait **uniquement du jeu d'entraînement** afin de sélectionner le seuil de décision. Par défaut, le pipeline maximise le F1 parmi les seuils respectant `recall >= 0.95`. Le jeu de test officiel n'est jamais utilisé pour cette sélection. Les modèles finaux sont ensuite réentraînés sur l'intégralité du jeu d'entraînement officiel et évalués sur le test officiel.
+Pour la Random Forest, un holdout stratifié de 20 % est extrait **uniquement du jeu d'entraînement** afin d'étudier le seuil de décision. Par défaut, le pipeline recherche le seuil maximisant le F1 parmi ceux respectant `recall >= 0.95`. Le jeu de test officiel n'est jamais utilisé pour sélectionner ce seuil expérimental.
 
-Le seuil minimal de recall peut être explicité :
-
-```powershell
-python -m cyberplatform.training --data-dir data/raw/unsw_nb15 --minimum-recall 0.95
-```
+L'expérience finale a proposé un seuil de `0.42` sur ce holdout. Cependant, ce seuil dégrade le F1, la précision et le taux de faux positifs sur le jeu de test officiel. Le seuil opérationnel reste donc **0.50** ; `0.42` est conservé comme résultat d'étude de sensibilité et non comme seuil déployé.
 
 Le pipeline sauvegarde :
 
@@ -159,15 +148,28 @@ models/primary_model.joblib
 reports/model_metrics.json
 ```
 
-`model_metrics.json` contient notamment les métriques finales, le seuil sélectionné, les résultats de la validation de seuil et les points nécessaires aux courbes ROC et Precision-Recall.
+`model_metrics.json` contient les métriques finales, le seuil opérationnel, le seuil expérimental, les résultats de validation et les points nécessaires aux courbes ROC et Precision-Recall.
 
-Pour un essai limité en mémoire sous Windows :
+## Résultats scientifiques finaux
 
-```powershell
-python -m cyberplatform.training --data-dir data/raw/unsw_nb15 --max-rows-per-file 50000
+La validation finale utilise le split officiel UNSW-NB15 : **175 341 lignes d'entraînement** et **82 332 lignes de test**.
+
+| Modèle / seuil | Accuracy | Precision | Recall | F1 | FPR | FNR | ROC-AUC | PR-AUC |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Logistic Regression — 0.50 | 83.53 % | 80.20 % | 93.06 % | 86.15 % | 28.14 % | 6.94 % | 95.60 % | 96.66 % |
+| **Random Forest — 0.50** | **89.02 %** | **84.78 %** | **97.58 %** | **90.73 %** | **21.46 %** | **2.42 %** | **98.04 %** | **98.38 %** |
+| Random Forest — seuil expérimental 0.42 | 87.20 % | 81.86 % | 98.60 % | 89.45 % | 26.78 % | 1.40 % | 98.04 % | 98.38 % |
+
+Matrice de confusion du **Random Forest opérationnel à 0.50** :
+
+```text
+TN = 29 058    FP = 7 942
+FN =  1 097    TP = 44 235
 ```
 
-Cette option est destinée aux essais techniques. Les résultats présentés dans le rapport final doivent préciser exactement la volumétrie réellement utilisée.
+La Random Forest est retenue comme modèle principal : elle améliore nettement le recall, le F1, ROC-AUC et PR-AUC par rapport à la Logistic Regression et réduit le taux de faux négatifs. Le FPR reste néanmoins une limite importante du prototype et doit être discuté dans le rapport.
+
+L'étude de seuil montre aussi qu'abaisser le seuil à `0.42` augmente encore le recall, mais au prix de **1 965 faux positifs supplémentaires** par rapport au seuil `0.50`. Le compromis opérationnel à `0.50` est donc conservé.
 
 ## Lancer les tests
 
@@ -198,7 +200,7 @@ Pour un fichier UNSW contenant `attack_cat`, la vue d'ensemble compare les déci
 
 ### Analyse ML
 
-L'onglet **Analyse ML** présente la comparaison Logistic Regression / Random Forest, la matrice de confusion, le seuil de décision Random Forest et, après régénération du rapport, les courbes ROC et Precision-Recall.
+L'onglet **Analyse ML** présente la comparaison Logistic Regression / Random Forest, la matrice de confusion, le seuil opérationnel, l'expérience de seuil et les courbes ROC et Precision-Recall.
 
 ### Alertes
 
@@ -237,6 +239,8 @@ Le prototype reste volontairement léger : données brutes en fichiers hors Git,
 - sources système/authentification/cloud/applicatives utilisées surtout pour démontrer ingestion, normalisation et restitution ;
 - classification multi-classe non implémentée dans la consolidation binaire ;
 - `attack_cat` d'UNSW-NB15 est une vérité terrain/contexte, pas une sortie du classifieur binaire ;
+- le FPR du modèle principal reste significatif et constitue une limite opérationnelle ;
+- le seuil expérimental optimisé sur validation ne généralise pas suffisamment pour remplacer automatiquement le seuil 0.50 ;
 - pas de réponse automatique, blocage réseau ou orchestration SOC ;
 - pas de Wazuh/Elastic complet ;
 - pas de Deep Learning obligatoire ;
