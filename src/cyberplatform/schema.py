@@ -36,6 +36,7 @@ class SecurityEvent:
     features: dict[str, Any] = field(default_factory=dict)
     prediction: int | None = None
     attack_type: str | None = None
+    confidence: float | None = None
     risk_score: float | None = None
     priority: Priority | None = None
 
@@ -52,22 +53,23 @@ class SecurityEvent:
             "features": self.features,
             "prediction": self.prediction,
             "attack_type": self.attack_type,
+            "confidence": self.confidence,
             "risk_score": self.risk_score,
             "priority": self.priority.value if self.priority else None,
         }
 
 
 def priority_from_score(score: float) -> Priority:
+    """Map a 0-100 score to the thresholds defined by the specifications."""
     if not 0 <= score <= 100:
         raise ValueError("Risk score must be between 0 and 100.")
-
-    if score >= 85:
-        return Priority.CRITICAL
-    if score >= 65:
-        return Priority.HIGH
-    if score >= 35:
+    if score <= 30:
+        return Priority.LOW
+    if score <= 60:
         return Priority.MEDIUM
-    return Priority.LOW
+    if score <= 80:
+        return Priority.HIGH
+    return Priority.CRITICAL
 
 
 def validate_security_event(event: SecurityEvent) -> None:
@@ -77,3 +79,7 @@ def validate_security_event(event: SecurityEvent) -> None:
         raise ValueError("raw_message is required.")
     if not 1 <= event.severity <= 5:
         raise ValueError("severity must be between 1 and 5.")
+    if event.confidence is not None and not 0 <= event.confidence <= 1:
+        raise ValueError("confidence must be between 0 and 1.")
+    if event.risk_score is not None and not 0 <= event.risk_score <= 100:
+        raise ValueError("risk_score must be between 0 and 100.")
