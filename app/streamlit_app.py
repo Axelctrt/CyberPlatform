@@ -85,7 +85,7 @@ with overview_tab:
         predicted = event_table[event_table["prediction"].notna()].copy()
         if not predicted.empty:
             predicted["prediction_label"] = predicted["prediction"].map(
-                {0: "Normal prédit", 1: "Attaque prédite"}
+                {0: "Aucune attaque détectée", 1: "Attaque détectée"}
             )
 
     left, right = st.columns(2)
@@ -106,7 +106,7 @@ with overview_tab:
                     values="count",
                     names="prediction_label",
                     hole=0.5,
-                    labels={"prediction_label": "Résultat", "count": "Événements"},
+                    labels={"prediction_label": "Décision du modèle", "count": "Événements"},
                 ),
                 use_container_width=True,
             )
@@ -131,7 +131,7 @@ with overview_tab:
     if not predicted.empty and "known_attack_category" in predicted.columns:
         category_predictions = predicted.dropna(subset=["known_attack_category"]).copy()
         if not category_predictions.empty:
-            st.subheader("Prédictions par catégorie réelle UNSW-NB15")
+            st.subheader("Décisions du modèle par catégorie réelle UNSW-NB15")
 
             actual_attack = (
                 category_predictions["known_attack_category"]
@@ -169,7 +169,7 @@ with overview_tab:
                     barmode="group",
                     labels={
                         "known_attack_category": "Catégorie réelle",
-                        "prediction_label": "Prédiction",
+                        "prediction_label": "Décision du modèle",
                         "count": "Événements",
                     },
                 ),
@@ -178,7 +178,7 @@ with overview_tab:
             st.caption(
                 f"Recall observé sur cet échantillon : **{sample_recall:.1f} %**. "
                 "Les catégories proviennent de attack_cat et représentent la vérité terrain ; "
-                "le modèle reste un classifieur binaire Normal / Attack."
+                "le modèle décide uniquement si une attaque est détectée ou non."
             )
 
     st.subheader("Événements")
@@ -219,7 +219,7 @@ with alerts_tab:
                 filtered = filtered[filtered["known_attack_category"].isin(category_filter)]
                 st.caption(
                     "Le filtre de catégorie utilise attack_cat fourni par UNSW-NB15 ; "
-                    "le modèle prédit uniquement Normal / Attack."
+                    "le modèle décide uniquement si une attaque est détectée ou non."
                 )
 
         filtered = filtered.sort_values("risk_score", ascending=False)
