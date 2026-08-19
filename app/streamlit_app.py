@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 import sys
 
@@ -16,6 +17,7 @@ from cyberplatform.dashboard import (
     analyze_unsw_dataframe,
     build_dashboard_data,
     confusion_matrix_table,
+    known_category_counts,
     load_demo_events,
     load_metrics_report,
     metrics_report_to_table,
@@ -73,8 +75,36 @@ with overview_tab:
             st.plotly_chart(px.bar(priorities, x="priority", y="count"), use_container_width=True)
         else:
             st.caption("Aucune alerte ML priorisée.")
+
+    categories = known_category_counts(event_table)
+    if not categories.empty:
+        st.subheader("Catégories connues UNSW-NB15")
+        st.plotly_chart(
+            px.bar(
+                categories,
+                x="known_attack_category",
+                y="count",
+                labels={"known_attack_category": "Catégorie", "count": "Événements"},
+            ),
+            use_container_width=True,
+        )
+        st.caption(
+            "Ces catégories proviennent du champ attack_cat du dataset importé. "
+            "Elles servent de vérité terrain/contexte et ne sont pas prédites par le classifieur binaire."
+        )
+
     st.subheader("Événements")
-    st.dataframe(event_table, use_container_width=True, hide_index=True)
+    st.dataframe(
+        event_table,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "source_type": "Source",
+            "prediction": "Prédiction binaire",
+            "known_attack_category": "Catégorie connue UNSW",
+            "attack_type": "Type d'attaque prédit",
+        },
+    )
 
 with alerts_tab:
     st.subheader("Alertes détectées et priorisées")
@@ -85,10 +115,37 @@ with alerts_tab:
         priority_filter = st.multiselect("Priorité", priorities, default=priorities)
         sources = sorted(alert_table["source_type"].dropna().unique())
         source_filter = st.multiselect("Source", sources, default=sources)
+
         filtered = alert_table[
             alert_table["priority"].isin(priority_filter) & alert_table["source_type"].isin(source_filter)
-        ].sort_values("risk_score", ascending=False)
-        st.dataframe(filtered, use_container_width=True, hide_index=True)
+        ]
+
+        if "known_attack_category" in alert_table.columns:
+            categories = sorted(alert_table["known_attack_category"].dropna().unique())
+            if categories:
+                category_filter = st.multiselect(
+                    "Catégorie UNSW connue (vérité terrain)",
+                    categories,
+                    default=categories,
+                )
+                filtered = filtered[filtered["known_attack_category"].isin(category_filter)]
+                st.caption(
+                    "Le filtre de catégorie utilise attack_cat fourni par UNSW-NB15 ; "
+                    "le modèle prédit uniquement Normal / Attack."
+                )
+
+        filtered = filtered.sort_values("risk_score", ascending=False)
+        st.dataframe(
+            filtered,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "source_type": "Source",
+                "prediction": "Prédiction binaire",
+                "known_attack_category": "Catégorie connue UNSW",
+                "attack_type": "Type d'attaque prédit",
+            },
+        )
         st.download_button(
             "Télécharger les alertes CSV",
             data=filtered.to_csv(index=False).encode("utf-8"),
@@ -128,7 +185,7 @@ with import_tab:
             if mode.startswith("UNSW"):
                 if not MODEL_PATH.exists():
                     raise FileNotFoundError("models/primary_model.joblib absent : entraînez d'abord le modèle UNSW-NB15.")
-                frame = pd.read_csv(uploaded)
+                frame = pd.read_csv(BytesIO(payload))
                 st.session_state.dashboard_data = analyze_unsw_dataframe(MODEL_PATH, frame)
                 st.session_state.analysis_origin = "Analyse ML avec le modèle sauvegardé entraîné sur UNSW-NB15"
             elif mode.startswith("CSV"):
