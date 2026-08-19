@@ -11,6 +11,7 @@ from cyberplatform.scoring import (
     enrich_events_with_scores,
     export_alerts_csv,
     priority_distribution,
+    risk_score_components,
 )
 
 
@@ -18,6 +19,17 @@ class RiskScoringTest(unittest.TestCase):
     def test_risk_score_is_bounded(self):
         score = compute_risk_score(1.5, 8, SourceType.AUTHENTICATION)
         self.assertTrue(0 <= score <= 100)
+
+    def test_risk_score_components_reconcile_with_total(self):
+        components = risk_score_components(0.80, 3, SourceType.NETWORK)
+        expected = round(
+            components["confidence_component"]
+            + components["severity_component"]
+            + components["source_criticality_component"],
+            2,
+        )
+        self.assertEqual(components["total"], expected)
+        self.assertEqual(compute_risk_score(0.80, 3, SourceType.NETWORK), expected)
 
     def test_benign_prediction_has_no_risk_or_priority(self):
         event = normalize_records(load_records("data/samples/auth_events.csv"))[1]
