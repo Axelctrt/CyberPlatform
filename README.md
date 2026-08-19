@@ -35,13 +35,18 @@ La chaîne ML déployée reste **binaire**. Si un fichier UNSW-NB15 contient `at
 - baseline Logistic Regression ;
 - modèle principal candidat Random Forest ;
 - comparaison reproductible sur le même jeu de test ;
+- sélection du seuil Random Forest sur une validation issue uniquement du jeu d'entraînement ;
 - accuracy, precision, recall, F1, TN, FP, FN, TP, FPR, FNR, ROC-AUC et PR-AUC ;
 - matrice de confusion ;
+- courbes ROC et Precision-Recall ;
+- analyse des décisions par catégorie réelle UNSW-NB15, sans fausse classification multi-classe ;
 - sauvegarde Joblib des modèles ;
 - inférence à partir d'un modèle sauvegardé, sans réentraînement dans Streamlit ;
+- prévalidation des fichiers UNSW avant inférence ;
 - scoring 0-100 uniquement pour les événements détectés comme attaques ;
+- décomposition explicable du score de risque ;
 - seuils Low 0-30, Medium 31-60, High 61-80, Critical 81-100 ;
-- export CSV des alertes ;
+- inspection détaillée et export CSV des alertes ;
 - mapping MITRE ATT&CK simplifié et indicatif, sans identifiant fictif ;
 - importance globale des variables du Random Forest ;
 - tests automatisés et GitHub Actions.
@@ -55,13 +60,13 @@ CyberPlatform/
 │   ├── raw/unsw_nb15/           # Dataset complet local, ignoré par Git
 │   ├── processed/               # Données générées, ignorées par Git
 │   └── samples/                 # Petits fixtures et démonstrations versionnés
-├── docs/                        # Roadmap Agile / Kanban
+├── docs/                        # Roadmap et documentation scientifique
 ├── models/                      # Modèles Joblib générés localement
 ├── reports/                     # Métriques et résultats générés
 ├── src/cyberplatform/
 │   ├── datasets/                # Adaptateurs datasets, dont UNSW-NB15
 │   ├── ingestion/               # CSV, JSON, Suricata et normalisation
-│   ├── ml/                      # Prétraitement, modèles, métriques, inférence
+│   ├── ml/                      # Prétraitement, modèles, métriques, seuil, inférence
 │   ├── scoring/                 # Score de risque et priorisation
 │   ├── threat_intel/            # Mapping MITRE indicatif
 │   ├── dashboard.py             # Préparation des données de l'interface
@@ -135,7 +140,17 @@ L'entraînement est volontairement séparé du dashboard.
 python -m cyberplatform.training --data-dir data/raw/unsw_nb15
 ```
 
-Cette commande charge et nettoie UNSW-NB15, exclut `id`, `label` et `attack_cat` des features, conserve le split officiel train/test lorsqu'il est disponible, entraîne Logistic Regression et Random Forest, calcule les métriques cyber puis sauvegarde :
+Cette commande charge et nettoie UNSW-NB15, exclut `id`, `label` et `attack_cat` des features et conserve le split officiel train/test lorsqu'il est disponible.
+
+Pour la Random Forest, un holdout stratifié de 20 % est extrait **uniquement du jeu d'entraînement** afin de sélectionner le seuil de décision. Par défaut, le pipeline maximise le F1 parmi les seuils respectant `recall >= 0.95`. Le jeu de test officiel n'est jamais utilisé pour cette sélection. Les modèles finaux sont ensuite réentraînés sur l'intégralité du jeu d'entraînement officiel et évalués sur le test officiel.
+
+Le seuil minimal de recall peut être explicité :
+
+```powershell
+python -m cyberplatform.training --data-dir data/raw/unsw_nb15 --minimum-recall 0.95
+```
+
+Le pipeline sauvegarde :
 
 ```text
 models/logistic_regression.joblib
@@ -143,6 +158,8 @@ models/random_forest.joblib
 models/primary_model.joblib
 reports/model_metrics.json
 ```
+
+`model_metrics.json` contient notamment les métriques finales, le seuil sélectionné, les résultats de la validation de seuil et les points nécessaires aux courbes ROC et Precision-Recall.
 
 Pour un essai limité en mémoire sous Windows :
 
@@ -173,15 +190,25 @@ Le dashboard ne réentraîne aucun modèle. S'il ne trouve pas `models/primary_m
 
 Trois modes sont proposés :
 
-- **UNSW-NB15 compatible (CSV)** : vérification des features attendues, chargement du modèle Joblib, prédiction binaire et scoring ;
+- **UNSW-NB15 compatible (CSV)** : prévisualisation du nombre de lignes et des variables, contrôle des features attendues, chargement du modèle Joblib, application du seuil sauvegardé, décision binaire et scoring ;
 - **CSV / JSON générique** : ingestion et normalisation pour la démonstration multi-source, sans fausse prédiction réseau ;
 - **Suricata EVE JSON Lines** : ingestion et contextualisation IDS, sans prétendre que le modèle UNSW-NB15 sait traiter directement ces événements.
+
+Pour un fichier UNSW contenant `attack_cat`, la vue d'ensemble compare les décisions binaires du modèle aux catégories réelles et permet d'étudier les faux positifs, faux négatifs et taux de détection par famille réelle.
+
+### Analyse ML
+
+L'onglet **Analyse ML** présente la comparaison Logistic Regression / Random Forest, la matrice de confusion, le seuil de décision Random Forest et, après régénération du rapport, les courbes ROC et Precision-Recall.
+
+### Alertes
+
+L'onglet **Alertes** permet de filtrer les alertes détectées, d'en inspecter une individuellement et d'expliquer son score de risque par ses trois contributions : confiance ML, sévérité et criticité de la source.
 
 ## Scoring et priorisation
 
 Le score combine, à titre de règle métier de prototype : confiance du modèle 60 %, sévérité 25 % et criticité simple du type de source 15 %.
 
-Un événement prédit normal (`prediction == 0`) conserve sa confiance ML mais ne reçoit **ni `risk_score`, ni `priority`**. Le scoring opérationnel s'applique uniquement aux alertes détectées.
+Un événement pour lequel aucune attaque n'est détectée (`prediction == 0`) conserve sa confiance ML mais ne reçoit **ni `risk_score`, ni `priority`**. Le scoring opérationnel s'applique uniquement aux alertes détectées.
 
 | Score | Priorité |
 |---:|---|
@@ -214,6 +241,10 @@ Le prototype reste volontairement léger : données brutes en fichiers hors Git,
 - pas de Wazuh/Elastic complet ;
 - pas de Deep Learning obligatoire ;
 - SHAP reste une extension après stabilisation du binaire.
+
+## Documentation scientifique
+
+Le protocole de sélection de seuil, l'interprétation des courbes, l'analyse d'erreurs et la prévalidation des imports sont détaillés dans `docs/SCIENTIFIC_EVALUATION.md`.
 
 ## Méthode projet
 
