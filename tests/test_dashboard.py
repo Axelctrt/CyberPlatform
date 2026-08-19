@@ -6,6 +6,7 @@ from cyberplatform.dashboard import (
     analyze_unsw_dataframe,
     build_dashboard_data,
     confusion_matrix_table,
+    known_category_counts,
     load_demo_events,
     metrics_report_to_table,
     normalize_generic_upload,
@@ -23,6 +24,7 @@ class DashboardDataTest(unittest.TestCase):
         self.assertEqual(len(data.alert_table), 0)
         self.assertGreaterEqual(source_counts(data.event_table)["count"].sum(), 1)
         self.assertEqual(priority_counts(data.alert_table)["count"].sum(), 0)
+        self.assertEqual(known_category_counts(data.event_table)["count"].sum(), 0)
 
     def test_generic_upload_is_normalized_without_prediction(self):
         payload = Path("data/samples/auth_events.csv").read_bytes()
@@ -39,16 +41,24 @@ class DashboardDataTest(unittest.TestCase):
         matrix = confusion_matrix_table({"confusion_matrix": [[8, 2], [1, 9]]})
         self.assertEqual(matrix.loc["Actual Attack", "Pred Attack"], 9)
 
-    def test_saved_binary_model_does_not_fake_multiclass_attack_type(self):
+    def test_saved_binary_model_exposes_dataset_category_without_faking_multiclass_prediction(self):
         frame = load_unsw_nb15_file("data/samples/unsw_nb15_sample.csv")
         split = prepare_unsw_nb15_split(frame, test_size=0.3)
         model = train_primary_classifier(split.train_features, split.train_target)
         with TemporaryDirectory() as tmpdir:
             path = save_model(model, Path(tmpdir) / "primary_model.joblib")
             data = analyze_unsw_dataframe(path, frame)
+
         self.assertEqual(len(data.event_table), len(frame))
         self.assertIn("prediction", data.event_table.columns)
+        self.assertIn("known_attack_category", data.event_table.columns)
+        self.assertEqual(known_category_counts(data.event_table)["count"].sum(), len(frame))
+        self.assertSetEqual(
+            set(data.event_table["known_attack_category"].dropna()),
+            set(frame["attack_cat"].dropna()),
+        )
         if not data.alert_table.empty:
+            self.assertIn("known_attack_category", data.alert_table.columns)
             self.assertTrue(data.alert_table["attack_type"].isna().all())
 
 
