@@ -26,12 +26,18 @@ def compare_baseline_and_primary(
     train_target: pd.Series,
     test_target: pd.Series,
     *,
+    primary_threshold: float = 0.5,
     return_models: bool = False,
 ) -> ModelComparison:
     baseline_model = train_baseline_classifier(train_features, train_target)
     primary_model = train_primary_classifier(train_features, train_target)
-    baseline_metrics = evaluate_classifier(baseline_model, test_features, test_target)
-    primary_metrics = evaluate_classifier(primary_model, test_features, test_target)
+    baseline_metrics = evaluate_classifier(baseline_model, test_features, test_target, threshold=0.5)
+    primary_metrics = evaluate_classifier(
+        primary_model,
+        test_features,
+        test_target,
+        threshold=primary_threshold,
+    )
 
     baseline_rank = (baseline_metrics.f1_score, baseline_metrics.recall, baseline_metrics.precision)
     primary_rank = (primary_metrics.f1_score, primary_metrics.recall, primary_metrics.precision)
