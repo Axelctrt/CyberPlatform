@@ -21,9 +21,12 @@ class TrainingCommandTest(unittest.TestCase):
 
             self.assertEqual(report["dataset"], "UNSW-NB15")
             self.assertEqual(report["split_strategy"], "official_train_test_files")
-            self.assertTrue(0.0 <= report["primary_decision_threshold"] <= 1.0)
+            self.assertEqual(report["primary_decision_threshold"], 0.5)
+            self.assertEqual(report["selected_decision_threshold"], 0.5)
+            self.assertTrue(0.0 <= report["experimental_tuned_threshold"] <= 1.0)
             self.assertIn("threshold_selection", report)
             self.assertGreater(report["threshold_selection"]["validation_rows"], 0)
+            self.assertIn("primary_metrics_experimental_threshold", report)
             self.assertIn("curves", report)
             self.assertTrue(report["curves"]["primary"]["roc"])
             self.assertTrue(report["curves"]["primary"]["precision_recall"])
