@@ -5,7 +5,6 @@ from __future__ import annotations
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
-from cyberplatform.datasets.unsw_nb15 import clean_unsw_nb15_dataframe
 from cyberplatform.ml.primary import predict_attack_probabilities
 
 
@@ -32,12 +31,17 @@ def prepare_inference_features(dataframe: pd.DataFrame, model: Pipeline) -> pd.D
     return frame[required].copy()
 
 
-def predict_unsw_dataframe(model: Pipeline, dataframe: pd.DataFrame) -> pd.DataFrame:
-    """Return prediction and attack probability without retraining the model."""
+def predict_unsw_dataframe(
+    model: Pipeline,
+    dataframe: pd.DataFrame,
+    *,
+    threshold: float = 0.5,
+) -> pd.DataFrame:
+    """Return binary decisions and attack probabilities without retraining."""
     features = prepare_inference_features(dataframe, model)
     probabilities = predict_attack_probabilities(model, features)
-    predictions = model.predict(features)
+    predictions = [int(probability >= threshold) for probability in probabilities]
     result = dataframe.copy().reset_index(drop=True)
-    result["prediction"] = [int(value) for value in predictions]
+    result["prediction"] = predictions
     result["attack_probability"] = probabilities
     return result
