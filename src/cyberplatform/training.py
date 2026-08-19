@@ -112,6 +112,25 @@ def train_unsw_nb15(
     return payload
 
 
+def console_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a readable CLI summary while the full scientific report stays on disk."""
+    selection = payload.get("threshold_selection", {})
+    return {
+        "dataset": payload.get("dataset"),
+        "task": payload.get("task"),
+        "split_strategy": payload.get("split_strategy"),
+        "train_rows": payload.get("train_rows"),
+        "test_rows": payload.get("test_rows"),
+        "selected_model": payload.get("selected_model"),
+        "selected_decision_threshold": payload.get("selected_decision_threshold"),
+        "threshold_selection_scope": payload.get("threshold_selection_scope"),
+        "threshold_validation": selection.get("selected"),
+        "baseline_metrics": payload.get("baseline_metrics"),
+        "primary_metrics": payload.get("primary_metrics"),
+        "full_report": "reports/model_metrics.json",
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Train CyberPlatform models on UNSW-NB15.")
     parser.add_argument("--data-dir", default="data/raw/unsw_nb15")
@@ -141,7 +160,9 @@ def main() -> None:
         max_rows_per_file=args.max_rows_per_file,
         minimum_recall=args.minimum_recall,
     )
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    summary = console_summary(payload)
+    summary["full_report"] = str(args.metrics_path)
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
 if __name__ == "__main__":
