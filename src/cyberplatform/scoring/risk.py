@@ -18,21 +18,34 @@ SOURCE_CRITICALITY = {
 }
 
 
+def risk_score_components(
+    attack_probability: float,
+    severity: int,
+    source_type: SourceType,
+) -> dict[str, float]:
+    """Return the transparent weighted components used by the prototype score."""
+    bounded_probability = min(max(float(attack_probability), 0.0), 1.0)
+    bounded_severity = min(max(int(severity), 1), 5)
+    source_criticality = SOURCE_CRITICALITY.get(source_type, 0.50)
+    confidence_component = bounded_probability * 60
+    severity_component = ((bounded_severity - 1) / 4) * 25
+    source_component = source_criticality * 15
+    total = min(max(confidence_component + severity_component + source_component, 0.0), 100.0)
+    return {
+        "confidence_component": round(confidence_component, 2),
+        "severity_component": round(severity_component, 2),
+        "source_criticality_component": round(source_component, 2),
+        "total": round(total, 2),
+    }
+
+
 def compute_risk_score(
     attack_probability: float,
     severity: int,
     source_type: SourceType,
 ) -> float:
     """Compute a documented prototype score from confidence, severity and source context."""
-    bounded_probability = min(max(float(attack_probability), 0.0), 1.0)
-    bounded_severity = min(max(int(severity), 1), 5)
-    source_criticality = SOURCE_CRITICALITY.get(source_type, 0.50)
-    score = (
-        bounded_probability * 60
-        + ((bounded_severity - 1) / 4) * 25
-        + source_criticality * 15
-    )
-    return round(min(max(score, 0.0), 100.0), 2)
+    return risk_score_components(attack_probability, severity, source_type)["total"]
 
 
 def enrich_event_with_score(
