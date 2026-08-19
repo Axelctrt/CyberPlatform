@@ -5,6 +5,7 @@ import unittest
 from cyberplatform.dashboard import (
     analyze_unsw_dataframe,
     build_dashboard_data,
+    category_detection_performance,
     confusion_matrix_table,
     known_category_counts,
     load_demo_events,
@@ -12,6 +13,7 @@ from cyberplatform.dashboard import (
     normalize_generic_upload,
     priority_counts,
     source_counts,
+    validate_unsw_dataframe,
 )
 from cyberplatform.datasets import load_unsw_nb15_file, prepare_unsw_nb15_split
 from cyberplatform.ml import save_model, train_primary_classifier
@@ -47,8 +49,13 @@ class DashboardDataTest(unittest.TestCase):
         model = train_primary_classifier(split.train_features, split.train_target)
         with TemporaryDirectory() as tmpdir:
             path = save_model(model, Path(tmpdir) / "primary_model.joblib")
+            validation = validate_unsw_dataframe(path, frame)
             data = analyze_unsw_dataframe(path, frame)
 
+        self.assertTrue(validation["compatible"])
+        self.assertEqual(validation["required_columns"], validation["recognized_columns"])
+        self.assertTrue(validation["has_label"])
+        self.assertTrue(validation["has_attack_cat"])
         self.assertEqual(len(data.event_table), len(frame))
         self.assertIn("prediction", data.event_table.columns)
         self.assertIn("known_attack_category", data.event_table.columns)
@@ -57,9 +64,26 @@ class DashboardDataTest(unittest.TestCase):
             set(data.event_table["known_attack_category"].dropna()),
             set(frame["attack_cat"].dropna()),
         )
+        performance = category_detection_performance(data.event_table)
+        self.assertFalse(performance.empty)
+        self.assertIn("attack_detection_rate", performance.columns)
+        self.assertIn("false_positive_rate", performance.columns)
         if not data.alert_table.empty:
             self.assertIn("known_attack_category", data.alert_table.columns)
             self.assertTrue(data.alert_table["attack_type"].isna().all())
+
+    def test_unsw_validation_reports_missing_model_columns(self):
+        frame = load_unsw_nb15_file("data/samples/unsw_nb15_sample.csv")
+        split = prepare_unsw_nb15_split(frame, test_size=0.3)
+        model = train_primary_classifier(split.train_features, split.train_target)
+        with TemporaryDirectory() as tmpdir:
+            path = save_model(model, Path(tmpdir) / "primary_model.joblib")
+            missing_column = split.feature_columns[0]
+            invalid = frame.drop(columns=[missing_column])
+            validation = validate_unsw_dataframe(path, invalid)
+
+        self.assertFalse(validation["compatible"])
+        self.assertIn(missing_column, validation["missing_columns"])
 
 
 if __name__ == "__main__":
