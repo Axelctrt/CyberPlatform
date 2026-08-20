@@ -12,7 +12,13 @@ from typing import Any
 import pandas as pd
 
 from cyberplatform.ingestion import normalize_eve_records, normalize_records
-from cyberplatform.ml import expected_model_columns, load_model, predict_unsw_dataframe
+from cyberplatform.ml import (
+    expected_model_columns,
+    load_model,
+    predict_attack_families,
+    predict_unsw_dataframe,
+    prepare_inference_features,
+)
 from cyberplatform.scoring import enrich_events_with_scores
 from cyberplatform.schema import Priority, SecurityEvent, SourceType
 from cyberplatform.threat_intel import map_events_to_mitre_records
@@ -35,9 +41,17 @@ def _known_attack_category(event: SecurityEvent) -> str | None:
     return text or None
 
 
+def _attack_family_confidence(event: SecurityEvent) -> float | None:
+    value = event.features.get("attack_family_confidence")
+    if value is None:
+        return None
+    return float(value)
+
+
 def _event_record_with_context(event: SecurityEvent) -> dict[str, Any]:
     record = event.to_record()
     record["known_attack_category"] = _known_attack_category(event)
+    record["attack_family_confidence"] = _attack_family_confidence(event)
     return record
 
 
@@ -57,6 +71,7 @@ def events_to_display_table(events: list[SecurityEvent]) -> pd.DataFrame:
         "priority",
         "known_attack_category",
         "attack_type",
+        "attack_family_confidence",
         "source_ip",
         "destination_ip",
         "username",
@@ -66,7 +81,7 @@ def events_to_display_table(events: list[SecurityEvent]) -> pd.DataFrame:
 
 
 def events_to_alert_table(events: list[SecurityEvent]) -> pd.DataFrame:
-    """Serialize detected alerts while preserving input-provided UNSW category context."""
+    """Serialize detected alerts with optional predicted attack-family enrichment."""
     return pd.DataFrame(
         [_event_record_with_context(event) for event in events if event.prediction == 1]
     )
@@ -130,6 +145,32 @@ def confusion_matrix_table(metrics: dict[str, Any]) -> pd.DataFrame:
         index=["Actual Normal", "Actual Attack"],
         columns=["Pred Normal", "Pred Attack"],
     )
+
+
+def multiclass_confusion_matrix_table(experiment: dict[str, Any]) -> pd.DataFrame:
+    """Return the attack-family confusion matrix stored in the scientific report."""
+    metrics = experiment.get("metrics", {})
+    labels = [str(label) for label in metrics.get("labels", [])]
+    matrix = metrics.get("confusion_matrix", [])
+    if not labels or not matrix:
+        return pd.DataFrame()
+    return pd.DataFrame(matrix, index=labels, columns=labels)
+
+
+def multiclass_per_class_table(experiment: dict[str, Any]) -> pd.DataFrame:
+    """Return per-family metrics in a dashboard-friendly table."""
+    per_class = experiment.get("metrics", {}).get("per_class", {})
+    rows = [
+        {
+            "family": family,
+            "precision": values.get("precision"),
+            "recall": values.get("recall"),
+            "f1_score": values.get("f1_score"),
+            "support": values.get("support"),
+        }
+        for family, values in per_class.items()
+    ]
+    return pd.DataFrame(rows)
 
 
 def priority_counts(alert_table: pd.DataFrame) -> pd.DataFrame:
@@ -250,15 +291,34 @@ def analyze_unsw_dataframe(
     dataframe: pd.DataFrame,
     *,
     threshold: float = 0.5,
+    attack_family_model_path: str | Path | None = None,
 ) -> DashboardData:
-    """Analyze UNSW-compatible rows with a saved binary model; never infer attack families."""
+    """Analyze UNSW rows with binary detection and optional conditional family enrichment."""
     model = load_model(model_path)
     normalized_input = dataframe.copy()
     normalized_input.columns = [str(column).strip().lower() for column in normalized_input.columns]
     analyzed = predict_unsw_dataframe(model, normalized_input, threshold=threshold)
-    events: list[SecurityEvent] = []
 
-    for _, row in analyzed.iterrows():
+    attack_types: list[str | None] = [None] * len(analyzed)
+    family_confidences: list[float | None] = [None] * len(analyzed)
+    family_path = Path(attack_family_model_path) if attack_family_model_path is not None else None
+    detected_positions = [position for position, value in enumerate(analyzed["prediction"].tolist()) if int(value) == 1]
+    if family_path is not None and family_path.exists() and detected_positions:
+        family_model = load_model(family_path)
+        detected_rows = analyzed.iloc[detected_positions]
+        family_features = prepare_inference_features(detected_rows, family_model)
+        predicted_families, predicted_confidences = predict_attack_families(family_model, family_features)
+        for position, family, family_confidence in zip(
+            detected_positions,
+            predicted_families,
+            predicted_confidences,
+            strict=True,
+        ):
+            attack_types[position] = family
+            family_confidences[position] = family_confidence
+
+    events: list[SecurityEvent] = []
+    for position, (_, row) in enumerate(analyzed.iterrows()):
         known_category = row.get("attack_cat")
         known_category = (
             str(known_category).strip()
@@ -272,6 +332,8 @@ def analyze_unsw_dataframe(
         }
         if known_category is not None:
             features["known_attack_category"] = known_category
+        if family_confidences[position] is not None:
+            features["attack_family_confidence"] = family_confidences[position]
 
         events.append(
             SecurityEvent(
@@ -285,7 +347,12 @@ def analyze_unsw_dataframe(
         )
 
     probabilities = analyzed["attack_probability"].tolist()
-    enriched = enrich_events_with_scores(events, probabilities, threshold=threshold)
+    enriched = enrich_events_with_scores(
+        events,
+        probabilities,
+        threshold=threshold,
+        attack_types=attack_types,
+    )
     return build_dashboard_data(enriched)
 
 

@@ -21,6 +21,8 @@ from cyberplatform.dashboard import (
     load_demo_events,
     load_metrics_report,
     metrics_report_to_table,
+    multiclass_confusion_matrix_table,
+    multiclass_per_class_table,
     normalize_generic_upload,
     normalize_suricata_upload,
     priority_counts,
@@ -37,6 +39,7 @@ st.caption("Prototype académique local de détection, scoring et priorisation d
 
 MODEL_PATH = PROJECT_ROOT / "models" / "primary_model.joblib"
 RF_MODEL_PATH = PROJECT_ROOT / "models" / "random_forest.joblib"
+FAMILY_MODEL_PATH = PROJECT_ROOT / "models" / "attack_family_random_forest.joblib"
 METRICS_PATH = PROJECT_ROOT / "reports" / "model_metrics.json"
 
 if "dashboard_data" not in st.session_state:
@@ -208,9 +211,9 @@ with overview_tab:
                     },
                 )
             st.caption(
-                f"Recall observé sur cet échantillon : **{sample_recall:.1f} %**. "
-                "Les catégories proviennent de attack_cat et représentent la vérité terrain ; "
-                "le modèle décide uniquement si une attaque est détectée ou non."
+                f"Recall binaire observé sur cet échantillon : **{sample_recall:.1f} %**. "
+                "attack_cat reste la vérité terrain. La famille d'attaque estimée, lorsqu'elle est disponible, "
+                "provient d'un second modèle multiclasses appliqué uniquement aux événements détectés comme attaques."
             )
 
     st.subheader("Événements")
@@ -222,7 +225,8 @@ with overview_tab:
             "source_type": "Source",
             "prediction": "Décision binaire (0/1)",
             "known_attack_category": "Catégorie réelle UNSW",
-            "attack_type": "Type d'attaque prédit",
+            "attack_type": "Famille d'attaque estimée",
+            "attack_family_confidence": st.column_config.NumberColumn("Confiance famille", format="%.3f"),
         },
     )
 
@@ -249,10 +253,16 @@ with alerts_tab:
                     default=categories,
                 )
                 filtered = filtered[filtered["known_attack_category"].isin(category_filter)]
-                st.caption(
-                    "Le filtre utilise attack_cat fourni par UNSW-NB15 ; "
-                    "la catégorie n'est pas prédite par le classifieur binaire."
+
+        if "attack_type" in alert_table.columns:
+            predicted_families = sorted(alert_table["attack_type"].dropna().unique())
+            if predicted_families:
+                family_filter = st.multiselect(
+                    "Famille estimée par le modèle multiclasses",
+                    predicted_families,
+                    default=predicted_families,
                 )
+                filtered = filtered[filtered["attack_type"].isin(family_filter)]
 
         filtered = filtered.sort_values("risk_score", ascending=False).reset_index(drop=True)
         st.dataframe(
@@ -263,7 +273,8 @@ with alerts_tab:
                 "source_type": "Source",
                 "prediction": "Décision binaire (0/1)",
                 "known_attack_category": "Catégorie réelle UNSW",
-                "attack_type": "Type d'attaque prédit",
+                "attack_type": "Famille d'attaque estimée",
+                "attack_family_confidence": st.column_config.NumberColumn("Confiance famille", format="%.3f"),
             },
         )
 
@@ -284,12 +295,27 @@ with alerts_tab:
             components = risk_score_components(confidence, severity, source_type)
 
             detail_metrics = st.columns(4)
-            detail_metrics[0].metric("Confiance ML", f"{confidence * 100:.1f} %")
+            detail_metrics[0].metric("Confiance détection", f"{confidence * 100:.1f} %")
             detail_metrics[1].metric("Score de risque", f"{float(selected_alert.get('risk_score') or 0):.2f} / 100")
             detail_metrics[2].metric("Priorité", str(selected_alert.get("priority") or "N/A"))
             detail_metrics[3].metric(
+                "Famille estimée",
+                str(selected_alert.get("attack_type") or "Non disponible"),
+            )
+
+            context_metrics = st.columns(2)
+            context_metrics[0].metric(
                 "Catégorie réelle UNSW",
                 str(selected_alert.get("known_attack_category") or "Non disponible"),
+            )
+            family_confidence = selected_alert.get("attack_family_confidence")
+            context_metrics[1].metric(
+                "Confiance famille",
+                "Non disponible" if pd.isna(family_confidence) else f"{float(family_confidence) * 100:.1f} %",
+            )
+            st.caption(
+                "La confiance de détection binaire alimente le score de risque. La confiance multiclasses sert uniquement "
+                "à l'enrichissement de la famille estimée et n'entre pas dans le score."
             )
 
             breakdown = pd.DataFrame(
@@ -305,10 +331,6 @@ with alerts_tab:
             )
             st.markdown("**Décomposition du score de risque**")
             st.dataframe(breakdown, use_container_width=True, hide_index=True)
-            st.caption(
-                "Le score est une règle métier explicite du prototype : confiance ML 60 %, "
-                "sévérité 25 % et criticité du type de source 15 %."
-            )
             raw_message = selected_alert.get("raw_message")
             if pd.notna(raw_message):
                 st.text_area("Événement source", value=str(raw_message), disabled=True)
@@ -321,7 +343,7 @@ with alerts_tab:
         )
 
 with ml_tab:
-    st.subheader("Comparaison Logistic Regression / Random Forest")
+    st.subheader("Détection binaire — Logistic Regression / Random Forest")
     if report is None:
         st.warning("Aucun rapport d'entraînement trouvé. Exécutez le pipeline UNSW-NB15 avant la démonstration ML.")
         st.code("python -m cyberplatform.training --data-dir data/raw/unsw_nb15", language="powershell")
@@ -339,16 +361,11 @@ with ml_tab:
             threshold_cols[2].metric("Recall validation", f"{float(selected_validation.get('recall', 0)) * 100:.1f} %")
             threshold_cols[3].metric("F1 validation", f"{float(selected_validation.get('f1_score', 0)) * 100:.1f} %")
             st.caption(
-                "Le seuil Random Forest est choisi sur un holdout stratifié issu uniquement du jeu d'entraînement, "
-                "avec maximisation du F1 sous contrainte de recall. Le jeu de test officiel reste réservé à l'évaluation finale."
-            )
-        else:
-            st.info(
-                "Ce rapport a été généré avant l'ajout de l'optimisation de seuil. "
-                "Relancez le pipeline d'entraînement pour produire le seuil et les courbes scientifiques."
+                "Le seuil expérimental est choisi sur un holdout stratifié issu uniquement du jeu d'entraînement. "
+                "Le seuil opérationnel 0.50 reste utilisé après contrôle de généralisation sur le test officiel."
             )
 
-        selected_model = st.selectbox("Matrice de confusion", ["Random Forest", "Logistic Regression"])
+        selected_model = st.selectbox("Matrice de confusion binaire", ["Random Forest", "Logistic Regression"])
         key = "primary_metrics" if selected_model == "Random Forest" else "baseline_metrics"
         matrix = confusion_matrix_table(report.get(key, {}))
         st.plotly_chart(
@@ -406,7 +423,58 @@ with ml_tab:
                 "elles ne servent pas à choisir le seuil de décision."
             )
 
-        st.caption("L'interprétation privilégie recall, precision, F1 et taux de faux positifs plutôt que l'accuracy seule.")
+        multiclass = report.get("multiclass_experiment", {})
+        st.divider()
+        st.subheader("Identification expérimentale des familles d'attaques")
+        if multiclass.get("status") != "available":
+            st.info(
+                "Aucun résultat multiclasses disponible dans ce rapport. Relancez l'entraînement avec des données "
+                "UNSW-NB15 contenant attack_cat."
+            )
+        else:
+            multi_metrics = multiclass.get("metrics", {})
+            multi_cols = st.columns(4)
+            multi_cols[0].metric("Accuracy", f"{float(multi_metrics.get('accuracy', 0)) * 100:.1f} %")
+            multi_cols[1].metric("Balanced accuracy", f"{float(multi_metrics.get('balanced_accuracy', 0)) * 100:.1f} %")
+            multi_cols[2].metric("Macro-F1", f"{float(multi_metrics.get('macro_f1', 0)) * 100:.1f} %")
+            multi_cols[3].metric("Weighted-F1", f"{float(multi_metrics.get('weighted_f1', 0)) * 100:.1f} %")
+            st.caption(
+                f"Expérience conditionnelle réalisée uniquement sur les attaques : {multiclass.get('train_rows', 0)} lignes train "
+                f"et {multiclass.get('test_rows', 0)} lignes test. Le détecteur binaire reste la porte d'entrée opérationnelle."
+            )
+
+            per_class = multiclass_per_class_table(multiclass)
+            if not per_class.empty:
+                st.markdown("**Performances par famille réelle**")
+                st.dataframe(
+                    per_class,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "family": "Famille",
+                        "precision": st.column_config.NumberColumn("Precision", format="%.3f"),
+                        "recall": st.column_config.NumberColumn("Recall", format="%.3f"),
+                        "f1_score": st.column_config.NumberColumn("F1", format="%.3f"),
+                        "support": "Support test",
+                    },
+                )
+
+            multiclass_matrix = multiclass_confusion_matrix_table(multiclass)
+            if not multiclass_matrix.empty:
+                st.markdown("**Matrice de confusion multiclasses**")
+                st.plotly_chart(
+                    px.imshow(
+                        multiclass_matrix,
+                        text_auto=True,
+                        aspect="auto",
+                        labels={"x": "Famille prédite", "y": "Famille réelle", "color": "Nombre"},
+                    ),
+                    use_container_width=True,
+                )
+            st.caption(
+                "Le Macro-F1 est particulièrement important ici car UNSW-NB15 est déséquilibré : il donne le même poids "
+                "à chaque famille, contrairement au Weighted-F1 qui est davantage influencé par les classes majoritaires."
+            )
 
 with import_tab:
     st.subheader("Importer une source")
@@ -437,8 +505,14 @@ with import_tab:
                     "label + attack_cat" if unsw_validation["has_label"] and unsw_validation["has_attack_cat"] else "partiel",
                 )
                 if unsw_validation["compatible"]:
+                    family_note = (
+                        " Le modèle multiclasses enrichira les alertes avec une famille estimée."
+                        if FAMILY_MODEL_PATH.exists()
+                        else " Le modèle multiclasses n'est pas encore disponible."
+                    )
                     st.success(
                         f"Fichier compatible avec le modèle. L'analyse utilisera le seuil de décision {selected_threshold:.2f}."
+                        + family_note
                     )
                 else:
                     missing = ", ".join(unsw_validation["missing_columns"][:12])
@@ -464,9 +538,11 @@ with import_tab:
                     MODEL_PATH,
                     unsw_frame,
                     threshold=selected_threshold,
+                    attack_family_model_path=FAMILY_MODEL_PATH if FAMILY_MODEL_PATH.exists() else None,
                 )
+                enrichment = " + enrichissement multiclasses" if FAMILY_MODEL_PATH.exists() else ""
                 st.session_state.analysis_origin = (
-                    f"Analyse ML avec le modèle sauvegardé entraîné sur UNSW-NB15 — seuil {selected_threshold:.2f}"
+                    f"Analyse ML UNSW-NB15 — détection binaire seuil {selected_threshold:.2f}{enrichment}"
                 )
             elif mode.startswith("CSV"):
                 st.session_state.dashboard_data = normalize_generic_upload(payload or b"", uploaded.name)
@@ -501,7 +577,7 @@ with threat_tab:
         st.caption("Un événement bénin ou non détecté comme suspect reste non mappé. Aucun identifiant ATT&CK fictif n'est utilisé.")
 
 with explain_tab:
-    st.subheader("Importance globale des variables — Random Forest")
+    st.subheader("Importance globale des variables — Random Forest binaire")
     if not RF_MODEL_PATH.exists():
         st.caption("Le modèle Random Forest sauvegardé n'est pas encore disponible.")
     else:

@@ -1,8 +1,8 @@
 # Évaluation scientifique et interprétation du modèle
 
-Ce document complète le README et décrit les améliorations d'évaluation ajoutées au prototype CyberPlatform sans élargir son périmètre fonctionnel. La plateforme reste un prototype académique local de détection binaire `normal / attaque`, validé principalement sur UNSW-NB15.
+Ce document complète le README et décrit les évaluations réalisées sur le prototype CyberPlatform. La plateforme reste centrée sur une détection binaire `normal / attaque`, enrichie par une expérimentation multiclasses conditionnelle sur les événements d'attaque UNSW-NB15.
 
-## 1. Protocole de seuil de décision
+## 1. Protocole de seuil de décision binaire
 
 La Random Forest produit une probabilité d'attaque. Le seuil opérationnel est fixé à `0.50`, mais une étude de sensibilité est réalisée afin de vérifier si un autre seuil améliore réellement le compromis de détection.
 
@@ -45,7 +45,7 @@ Sur cette validation interne :
 
 Ce résultat est très bon sur le holdout, mais il ne suffit pas à justifier le déploiement du seuil. Il faut vérifier sa généralisation sur le jeu de test officiel.
 
-## 3. Évaluation finale sur le test officiel
+## 3. Évaluation finale de la détection binaire
 
 La validation finale utilise :
 
@@ -116,9 +116,9 @@ FN =    633    TP = 44 699
 
 Le seuil `0.42` détecte **464 attaques supplémentaires** par rapport au seuil `0.50`, mais génère également **1 965 faux positifs supplémentaires**. Il améliore donc le recall et le FNR, mais dégrade la precision, le F1, l'accuracy et le FPR.
 
-**Conclusion : le seuil opérationnel `0.50` est conservé.** Le seuil `0.42` reste documenté comme expérience de sensibilité. Ce résultat met en évidence qu'un seuil performant sur une validation interne ne doit pas être déployé automatiquement sans contrôle de généralisation.
+**Conclusion : le seuil opérationnel `0.50` est conservé.** Le seuil `0.42` reste documenté comme expérience de sensibilité.
 
-## 4. Choix du modèle principal
+## 4. Choix du modèle binaire principal
 
 La Random Forest est retenue comme modèle principal face à la Logistic Regression. À seuil opérationnel `0.50`, elle présente notamment :
 
@@ -137,11 +137,71 @@ Le rapport d'entraînement contient des points de courbe ROC et Precision-Recall
 
 Ces courbes sont calculées sur le jeu de test officiel à des fins de comparaison scientifique des modèles. Elles ne servent pas à choisir le seuil de décision. Les AUC ne changent donc pas entre `0.50` et `0.42` : elles évaluent le classement produit par les probabilités du modèle, indépendamment d'un seuil binaire particulier.
 
-## 6. Analyse des erreurs par catégorie UNSW-NB15
+## 6. Expérience multiclasses : identification des familles d'attaques
 
-Le modèle final reste strictement binaire. Il ne prédit pas `DoS`, `Exploits`, `Generic`, `Reconnaissance`, etc.
+Une fois le détecteur binaire stabilisé, une seconde Random Forest a été ajoutée comme **expérience d'enrichissement**. Elle n'est entraînée que sur les lignes dont `label == 1` et utilise `attack_cat` comme cible. `attack_cat` reste exclu des variables d'entrée.
 
-Lorsque `attack_cat` est présent dans un fichier UNSW-NB15 importé, la plateforme l'utilise uniquement comme **vérité terrain** pour analyser les décisions binaires du modèle. Le dashboard peut ainsi afficher, pour chaque catégorie réelle :
+Cette expérience utilise donc :
+
+- **119 341** lignes d'attaque pour l'entraînement ;
+- **45 332** lignes d'attaque pour le test ;
+- neuf familles : `Analysis`, `Backdoor`, `DoS`, `Exploits`, `Fuzzers`, `Generic`, `Reconnaissance`, `Shellcode` et `Worms`.
+
+Le classifieur est une Random Forest de 100 arbres avec `class_weight="balanced_subsample"`. Il est sauvegardé séparément afin de ne pas modifier le rôle du modèle binaire.
+
+### Résultats globaux
+
+| Métrique | Valeur |
+|---|---:|
+| Accuracy | 76.13 % |
+| Balanced accuracy | 51.41 % |
+| Macro-F1 | 51.46 % |
+| Weighted-F1 | 78.91 % |
+
+L'accuracy et le Weighted-F1 peuvent donner une impression relativement favorable, mais ils sont fortement influencés par les classes majoritaires. Le **Macro-F1 de 51.46 %** est plus représentatif de l'hétérogénéité des résultats car chaque famille y a le même poids.
+
+### Résultats par famille
+
+| Famille | Precision | Recall | F1 | Support test |
+|---|---:|---:|---:|---:|
+| Analysis | 3.67 % | 3.99 % | 3.82 % | 677 |
+| Backdoor | 3.80 % | 32.76 % | 6.81 % | 583 |
+| DoS | 31.55 % | 20.35 % | 24.74 % | 4 089 |
+| Exploits | 78.70 % | 67.89 % | 72.89 % | 11 132 |
+| Fuzzers | 82.11 % | 76.53 % | 79.22 % | 6 062 |
+| Generic | 99.92 % | 96.66 % | 98.26 % | 18 871 |
+| Reconnaissance | 93.05 % | 79.23 % | 85.59 % | 3 496 |
+| Shellcode | 56.19 % | 64.81 % | 60.20 % | 378 |
+| Worms | 69.23 % | 20.45 % | 31.58 % | 44 |
+
+Les familles `Generic`, `Reconnaissance`, `Fuzzers` et `Exploits` sont les mieux reconnues. `Shellcode` obtient un résultat intermédiaire malgré un faible support. À l'inverse, `Analysis`, `Backdoor` et `DoS` sont mal séparées par le modèle actuel. Pour `Worms`, seulement 44 exemples sont présents dans le jeu de test, ce qui rend toute conclusion sur cette famille particulièrement fragile.
+
+L'écart entre les familles confirme que le déséquilibre des données et le recouvrement potentiel de leurs caractéristiques compliquent l'identification fine. Cette expérience n'est donc pas présentée comme un classifieur de familles fiable dans tous les cas.
+
+### Rôle dans la chaîne finale
+
+L'architecture retenue reste une cascade :
+
+```text
+événement réseau
+   -> détecteur binaire
+      -> normal : fin de l'analyse ML
+      -> attaque détectée : classifieur de famille expérimental
+```
+
+La probabilité du détecteur binaire reste la seule confiance utilisée dans le score de risque. La probabilité multiclasses sert uniquement à contextualiser la famille estimée.
+
+Une conséquence importante doit être explicitement comprise : **une fausse alerte du détecteur binaire est quand même transmise au classifieur de famille**, qui est entraîné uniquement sur des attaques et choisira donc nécessairement une des neuf familles. La famille estimée ne constitue donc jamais une confirmation indépendante de l'existence d'une attaque.
+
+De même, une attaque manquée par le détecteur binaire ne peut pas être classifiée par le second modèle. Les performances multiclasses mesurées sur les 45 332 attaques du test évaluent la capacité intrinsèque du classifieur de familles, pas la performance complète de la cascade de bout en bout.
+
+**Conclusion : la multiclassification est conservée comme enrichissement expérimental du prototype, et non comme nouvelle décision opérationnelle.**
+
+## 7. Analyse binaire par catégorie réelle UNSW-NB15
+
+Indépendamment de la multiclassification, lorsque `attack_cat` est présent dans un fichier UNSW-NB15 importé, la plateforme peut l'utiliser comme **vérité terrain** pour analyser les décisions du détecteur binaire.
+
+Le dashboard peut ainsi afficher, pour chaque catégorie réelle :
 
 - le nombre d'événements ;
 - le nombre d'attaques détectées ;
@@ -149,21 +209,21 @@ Lorsque `attack_cat` est présent dans un fichier UNSW-NB15 importé, la platefo
 - le taux de détection pour les catégories d'attaque ;
 - le taux de faux positifs pour la catégorie `Normal`.
 
-Cette analyse permet d'étudier les limites du détecteur sans présenter artificiellement le modèle comme un classifieur multi-classe.
+Cette vue reste distincte de l'estimation multiclasses afin de ne pas confondre vérité terrain, décision binaire et famille prédite.
 
-## 7. Explication du score de risque
+## 8. Explication du score de risque
 
 Le score de risque reste une règle métier explicite du prototype :
 
-- confiance ML : maximum 60 points ;
+- confiance du détecteur binaire : maximum 60 points ;
 - sévérité : maximum 25 points ;
 - criticité du type de source : maximum 15 points.
 
 Dans l'onglet **Alertes**, une alerte peut être inspectée individuellement. La contribution de chaque composante est affichée afin que le score ne soit pas une valeur opaque.
 
-Cette explicabilité concerne le **scoring opérationnel**. Elle ne remplace pas l'importance globale des variables de la Random Forest affichée dans l'onglet **Explicabilité**.
+La confiance du classifieur multiclasses n'entre pas dans ce calcul.
 
-## 8. Validation avant inférence
+## 9. Validation avant inférence
 
 Avant d'analyser un CSV en mode UNSW-NB15, le dashboard vérifie sa compatibilité avec les variables réellement attendues par le modèle sauvegardé.
 
@@ -177,6 +237,20 @@ La prévisualisation indique :
 
 Le bouton d'analyse ML reste désactivé tant que les variables obligatoires sont absentes.
 
+## 10. Limites scientifiques principales
+
+Les résultats doivent être interprétés dans le cadre d'un prototype académique :
+
+- UNSW-NB15 reste un dataset public et ne démontre pas à lui seul une généralisation à un réseau réel ;
+- le détecteur binaire conserve un FPR de **21.46 %** ;
+- le seuil `0.42`, bien que très performant sur le holdout du train, généralise moins bien que `0.50` ;
+- les performances multiclasses sont fortement hétérogènes ;
+- les classes rares disposent de très peu d'exemples de test ;
+- les erreurs du détecteur binaire se propagent vers l'étage multiclasses ;
+- la confiance multiclasses n'est pas calibrée comme une probabilité opérationnelle de certitude.
+
+Ces limites sont conservées dans la documentation au lieu d'être masquées, car elles font partie de l'analyse scientifique du projet.
+
 ## Reproductibilité
 
 Le rapport scientifique final est versionné dans :
@@ -189,6 +263,15 @@ Il peut être régénéré sur le dataset complet avec :
 
 ```powershell
 python -m cyberplatform.training --data-dir data/raw/unsw_nb15
+```
+
+Cette commande produit les trois modèles principaux :
+
+```text
+models/logistic_regression.joblib
+models/random_forest.joblib
+models/primary_model.joblib
+models/attack_family_random_forest.joblib
 ```
 
 Puis les tests peuvent être exécutés :
