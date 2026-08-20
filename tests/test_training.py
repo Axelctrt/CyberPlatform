@@ -6,7 +6,7 @@ from cyberplatform.training import train_unsw_nb15
 
 
 class TrainingCommandTest(unittest.TestCase):
-    def test_training_pipeline_writes_models_metrics_threshold_and_curves_without_full_dataset(self):
+    def test_training_pipeline_writes_binary_and_multiclass_artifacts_without_full_dataset(self):
         sample = Path("data/samples/unsw_nb15_sample.csv").read_text(encoding="utf-8")
         with TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -30,9 +30,18 @@ class TrainingCommandTest(unittest.TestCase):
             self.assertIn("curves", report)
             self.assertTrue(report["curves"]["primary"]["roc"])
             self.assertTrue(report["curves"]["primary"]["precision_recall"])
+
+            multiclass = report["multiclass_experiment"]
+            self.assertEqual(multiclass["status"], "available")
+            self.assertGreaterEqual(len(multiclass["metrics"]["labels"]), 2)
+            self.assertIn("macro_f1", multiclass["metrics"])
+            self.assertIn("weighted_f1", multiclass["metrics"])
+            self.assertIn("per_class", multiclass["metrics"])
+
             self.assertTrue((models_dir / "logistic_regression.joblib").exists())
             self.assertTrue((models_dir / "random_forest.joblib").exists())
             self.assertTrue((models_dir / "primary_model.joblib").exists())
+            self.assertTrue((models_dir / "attack_family_random_forest.joblib").exists())
             self.assertTrue(metrics_path.exists())
 
 
