@@ -13,14 +13,57 @@ from cyberplatform.datasets import load_unsw_nb15_dataset
 from cyberplatform.ml import (
     binary_curve_points,
     compare_baseline_and_primary,
+    evaluate_attack_family_classifier,
     evaluate_classifier,
     optimize_decision_threshold,
     save_model,
+    train_attack_family_classifier,
     train_primary_classifier,
 )
 
 
 DEFAULT_OPERATIONAL_THRESHOLD = 0.50
+
+
+def _attack_family_experiment(split: Any, output_dir: Path) -> dict[str, Any]:
+    """Train a conditional multiclass model on labelled attack rows only."""
+    train_mask = split.train_target.eq(1) & split.train_attack_categories.notna()
+    test_mask = split.test_target.eq(1) & split.test_attack_categories.notna()
+
+    train_features = split.train_features.loc[train_mask].reset_index(drop=True)
+    train_categories = split.train_attack_categories.loc[train_mask].astype(str).str.strip().reset_index(drop=True)
+    test_features = split.test_features.loc[test_mask].reset_index(drop=True)
+    test_categories = split.test_attack_categories.loc[test_mask].astype(str).str.strip().reset_index(drop=True)
+
+    distinct_train_classes = sorted(train_categories.unique().tolist())
+    if len(distinct_train_classes) < 2 or test_features.empty:
+        return {
+            "status": "unavailable",
+            "reason": "At least two labelled attack families in training and labelled attack rows in test are required.",
+            "train_rows": int(len(train_features)),
+            "test_rows": int(len(test_features)),
+            "train_classes": distinct_train_classes,
+        }
+
+    model = train_attack_family_classifier(train_features, train_categories)
+    metrics = evaluate_attack_family_classifier(model, test_features, test_categories)
+    save_model(model, output_dir / "attack_family_random_forest.joblib")
+
+    return {
+        "status": "available",
+        "role": "secondary scientific enrichment; binary detection remains operational gate",
+        "task": "conditional attack-family classification on attack rows only",
+        "model": "Random Forest",
+        "train_rows": int(len(train_features)),
+        "test_rows": int(len(test_features)),
+        "train_class_distribution": {
+            str(key): int(value) for key, value in train_categories.value_counts().sort_index().items()
+        },
+        "test_class_distribution": {
+            str(key): int(value) for key, value in test_categories.value_counts().sort_index().items()
+        },
+        "metrics": metrics.to_dict(),
+    }
 
 
 def train_unsw_nb15(
@@ -86,6 +129,8 @@ def train_unsw_nb15(
     )
     save_model(selected_model, output_dir / "primary_model.joblib")
 
+    multiclass_experiment = _attack_family_experiment(split, output_dir)
+
     curves = {
         "baseline": binary_curve_points(
             comparison.baseline_model,
@@ -123,6 +168,7 @@ def train_unsw_nb15(
         "baseline_metrics": comparison.baseline.to_dict(),
         "primary_metrics": comparison.primary.to_dict(),
         "primary_metrics_experimental_threshold": experimental_primary_metrics.to_dict(),
+        "multiclass_experiment": multiclass_experiment,
         "curves": curves,
     }
     destination = Path(metrics_path)
@@ -134,6 +180,8 @@ def train_unsw_nb15(
 def console_summary(payload: dict[str, Any]) -> dict[str, Any]:
     """Return a readable CLI summary while the full scientific report stays on disk."""
     selection = payload.get("threshold_selection", {})
+    multiclass = payload.get("multiclass_experiment", {})
+    multiclass_metrics = multiclass.get("metrics", {}) if multiclass.get("status") == "available" else {}
     return {
         "dataset": payload.get("dataset"),
         "task": payload.get("task"),
@@ -148,6 +196,16 @@ def console_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "baseline_metrics": payload.get("baseline_metrics"),
         "primary_metrics": payload.get("primary_metrics"),
         "primary_metrics_experimental_threshold": payload.get("primary_metrics_experimental_threshold"),
+        "multiclass_experiment": {
+            "status": multiclass.get("status"),
+            "train_rows": multiclass.get("train_rows"),
+            "test_rows": multiclass.get("test_rows"),
+            "classes": multiclass_metrics.get("labels", multiclass.get("train_classes", [])),
+            "accuracy": multiclass_metrics.get("accuracy"),
+            "balanced_accuracy": multiclass_metrics.get("balanced_accuracy"),
+            "macro_f1": multiclass_metrics.get("macro_f1"),
+            "weighted_f1": multiclass_metrics.get("weighted_f1"),
+        },
         "full_report": "reports/model_metrics.json",
     }
 
